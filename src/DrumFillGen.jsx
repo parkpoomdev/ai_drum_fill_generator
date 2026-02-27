@@ -246,6 +246,7 @@ const DrumFillGen = () => {
     const [fillAmount, setFillAmount] = useState(25);
 
     const [pattern, setPattern] = useState(() => generatePattern('acoustic', 60, 70, 25));
+    const [midiBlobUrl, setMidiBlobUrl] = useState(null);
 
     // Refs
     const audioCtxRef = useRef(null);
@@ -258,7 +259,7 @@ const DrumFillGen = () => {
     }, [genre, complexity, intensity, fillAmount]);
 
     // --- MIDI EXPORT LOGIC ---
-    const exportMIDI = () => {
+    const generateMidiBlob = useCallback(() => {
         // Helper to write Variable Length Quantity
         const writeVarInt = (value) => {
             if (value === 0) return [0];
@@ -283,16 +284,25 @@ const DrumFillGen = () => {
         // Tempo
         const microSecondsPerBeat = Math.round(60000000 / bpm);
 
-        // MTrk Data
-        const trackData = [];
-
-        // Add Tempo Meta Event (Delta 0, FF 51 03 tttttt)
-        trackData.push(
+        // MTrk 1: Tempo Track
+        const tempoTrackData = [
             0x00, 0xFF, 0x51, 0x03,
             (microSecondsPerBeat >> 16) & 0xFF,
             (microSecondsPerBeat >> 8) & 0xFF,
-            microSecondsPerBeat & 0xFF
-        );
+            microSecondsPerBeat & 0xFF,
+            0x00, 0xFF, 0x2F, 0x00 // End of Track
+        ];
+
+        const tempoTrackHeader = [
+            0x4D, 0x54, 0x72, 0x6B, // MTrk
+            (tempoTrackData.length >> 24) & 0xFF,
+            (tempoTrackData.length >> 16) & 0xFF,
+            (tempoTrackData.length >> 8) & 0xFF,
+            tempoTrackData.length & 0xFF
+        ];
+
+        // MTrk 2: Notes Track
+        const trackData = [];
 
         // Collect Events
         const events = [];
@@ -316,8 +326,8 @@ const DrumFillGen = () => {
 
                     // Note On
                     events.push({ tick: stepTick, type: 0x99, note, velocity }); // Channel 10 Note On
-                    // Note Off (Length 60 ticks = 1/32 note approx, preventing overlap mess)
-                    events.push({ tick: stepTick + 60, type: 0x89, note, velocity: 0 }); // Channel 10 Note Off
+                    // Note Off: use 0x99 with velocity 0 for max compatibility
+                    events.push({ tick: stepTick + 60, type: 0x99, note, velocity: 0 });
                 }
             });
         });
@@ -340,12 +350,12 @@ const DrumFillGen = () => {
         const header = [
             0x4D, 0x54, 0x68, 0x64, // MThd
             0x00, 0x00, 0x00, 0x06, // Length 6
-            0x00, 0x00, // Format 0
-            0x00, 0x01, // 1 Track
+            0x00, 0x01, // Format 1 (multi-track)
+            0x00, 0x02, // 2 Tracks
             (ticksPerBeat >> 8) & 0xFF, ticksPerBeat & 0xFF
         ];
 
-        // Build MTrk Header
+        // Build MTrk Header for Notes
         const trackHeader = [
             0x4D, 0x54, 0x72, 0x6B, // MTrk
             (trackData.length >> 24) & 0xFF,
@@ -354,18 +364,44 @@ const DrumFillGen = () => {
             trackData.length & 0xFF
         ];
 
-        const fileBytes = new Uint8Array([...header, ...trackHeader, ...trackData]);
+        const fileBytes = new Uint8Array([...header, ...tempoTrackHeader, ...tempoTrackData, ...trackHeader, ...trackData]);
 
-        // Download
-        const blob = new Blob([fileBytes], { type: 'audio/midi' });
+        return new Blob([fileBytes], { type: 'audio/midi' });
+    }, [pattern, bpm]);
+
+    useEffect(() => {
+        const blob = generateMidiBlob();
         const url = URL.createObjectURL(blob);
+        setMidiBlobUrl(url);
+        return () => {
+            URL.revokeObjectURL(url);
+        };
+    }, [generateMidiBlob]);
+
+    const exportMIDI = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+
+        // Re-generate fresh blob on click to ensure it's not revoked
+        const blob = generateMidiBlob();
+        const url = URL.createObjectURL(blob);
+
         const a = document.createElement('a');
         a.href = url;
         a.download = `drum-fill-${genre}-${Date.now()}.mid`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+
+        // Clean up url slightly later
+        setTimeout(() => {
+            URL.revokeObjectURL(url);
+        }, 1000);
+    };
+
+    const handleDragStart = (e) => {
+        if (!midiBlobUrl) return;
+        const downloadName = `drum-fill-${genre}-${Date.now()}.mid`;
+        e.dataTransfer.setData("DownloadURL", `audio/midi:${downloadName}:${midiBlobUrl}`);
     };
 
     const scheduleNote = (stepNumber, time) => {
@@ -510,9 +546,12 @@ const DrumFillGen = () => {
                             </div>
                             <button
                                 onClick={exportMIDI}
-                                className="w-full py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-300 flex items-center justify-center gap-2 transition-colors"
+                                draggable="true"
+                                onDragStart={handleDragStart}
+                                className="w-full py-2 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-300 flex items-center justify-center gap-2 transition-colors cursor-grab active:cursor-grabbing hover:bg-neutral-700/80"
+                                title="Click to download, or drag into your DAW"
                             >
-                                <Download size={16} /> Export MIDI File
+                                <Download size={16} /> Drag to DAW / Click to Export
                             </button>
                         </div>
                     </div>
