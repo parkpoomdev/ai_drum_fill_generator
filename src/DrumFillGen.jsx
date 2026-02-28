@@ -426,30 +426,84 @@ const DrumFillGen = () => {
             for (let i = stack.length - 1; i >= 0; i--) { let b = stack[i]; if (i > 0) b |= 0x80; res.push(b); }
             return res;
         };
+        const stringToBytes = (str) => unescape(encodeURIComponent(str)).split('').map(c => c.charCodeAt(0));
+
         const tpb = 480, tp16 = tpb / 4, uspb = Math.round(60000000 / bpm);
         const tempoData = [0x00, 0xFF, 0x51, 0x03, (uspb >> 16) & 0xFF, (uspb >> 8) & 0xFF, uspb & 0xFF, 0x00, 0xFF, 0x2F, 0x00];
         const tempoHeader = [0x4D, 0x54, 0x72, 0x6B, (tempoData.length >> 24) & 0xFF, (tempoData.length >> 16) & 0xFF, (tempoData.length >> 8) & 0xFF, tempoData.length & 0xFF];
         const trackData = [];
         const events = [];
         const GM_MAP = { kick: 36, snare: 38, hihat: 42, tomHigh: 50, tomMid: 47, tomLow: 43, crash: 49 };
-        activePattern.forEach((step, idx) => {
-            const tick = idx * tp16;
-            Object.entries(step).forEach(([inst, val]) => {
-                if (val > 0 && GM_MAP[inst]) {
-                    const vel = Math.min(127, Math.max(1, Math.floor(val * 127)));
-                    events.push({ tick, type: 0x99, note: GM_MAP[inst], velocity: vel });
-                    events.push({ tick: tick + 60, type: 0x99, note: GM_MAP[inst], velocity: 0 });
-                }
+
+        const trackNameStr = appMode === "arrangement" ? "AI Drum Arrangement" : "AI Drum Pattern";
+        const trackNameBytes = stringToBytes(trackNameStr);
+        events.push({ tick: 0, isMeta: true, data: [0xFF, 0x03, ...writeVarInt(trackNameBytes.length), ...trackNameBytes] });
+
+        if (appMode === "arrangement") {
+            let stepOffset = 0;
+            segments.forEach(seg => {
+                const markerBytes = stringToBytes(`Part: ${seg.name}`);
+                events.push({ tick: stepOffset * tp16, isMeta: true, data: [0xFF, 0x06, ...writeVarInt(markerBytes.length), ...markerBytes] });
+
+                seg.bars.forEach((barId) => {
+                    const item = barId ? library.find(l => l.id === barId) : null;
+                    if (item) {
+                        const descBytes = stringToBytes(`Pattern: ${item.name}`);
+                        events.push({ tick: stepOffset * tp16, isMeta: true, data: [0xFF, 0x01, ...writeVarInt(descBytes.length), ...descBytes] });
+                    }
+
+                    const pat = item ? item.pattern : Array(16).fill({});
+                    pat.forEach((step, idx) => {
+                        const tick = (stepOffset + idx) * tp16;
+                        Object.entries(step).forEach(([inst, val]) => {
+                            if (val > 0 && GM_MAP[inst]) {
+                                const vel = Math.min(127, Math.max(1, Math.floor(val * 127)));
+                                events.push({ tick, isMeta: false, data: [0x99, GM_MAP[inst], vel] });
+                                events.push({ tick: tick + 60, isMeta: false, data: [0x99, GM_MAP[inst], 0] });
+                            }
+                        });
+                    });
+                    stepOffset += 16;
+                });
             });
+        } else {
+            pattern.forEach((step, idx) => {
+                const tick = idx * tp16;
+                Object.entries(step).forEach(([inst, val]) => {
+                    if (val > 0 && GM_MAP[inst]) {
+                        const vel = Math.min(127, Math.max(1, Math.floor(val * 127)));
+                        events.push({ tick, isMeta: false, data: [0x99, GM_MAP[inst], vel] });
+                        events.push({ tick: tick + 60, isMeta: false, data: [0x99, GM_MAP[inst], 0] });
+                    }
+                });
+            });
+        }
+
+        events.sort((a, b) => {
+            if (a.tick !== b.tick) return a.tick - b.tick;
+            if (a.isMeta !== b.isMeta) return a.isMeta ? -1 : 1;
+            if (!a.isMeta && !b.isMeta) {
+                const velA = a.data[2];
+                const velB = b.data[2];
+                if (velA === 0 && velB > 0) return -1;
+                if (velB === 0 && velA > 0) return 1;
+            }
+            return 0;
         });
-        events.sort((a, b) => a.tick - b.tick);
+
         let lastTick = 0;
-        events.forEach(e => { const d = e.tick - lastTick; lastTick = e.tick; trackData.push(...writeVarInt(d)); trackData.push(e.type, e.note, e.velocity); });
+        events.forEach(e => {
+            const d = e.tick - lastTick;
+            lastTick = e.tick;
+            trackData.push(...writeVarInt(d));
+            trackData.push(...e.data);
+        });
         trackData.push(0x00, 0xFF, 0x2F, 0x00);
+
         const header = [0x4D, 0x54, 0x68, 0x64, 0x00, 0x00, 0x00, 0x06, 0x00, 0x01, 0x00, 0x02, (tpb >> 8) & 0xFF, tpb & 0xFF];
         const trackHeader = [0x4D, 0x54, 0x72, 0x6B, (trackData.length >> 24) & 0xFF, (trackData.length >> 16) & 0xFF, (trackData.length >> 8) & 0xFF, trackData.length & 0xFF];
         return new Blob([new Uint8Array([...header, ...tempoHeader, ...tempoData, ...trackHeader, ...trackData])], { type: "audio/midi" });
-    }, [activePattern, bpm]);
+    }, [pattern, segments, library, bpm, appMode]);
 
     const exportMIDI = () => {
         const blob = generateMidiBlob();
