@@ -831,10 +831,41 @@ const DrumFillGen = () => {
                                                     className="flex-1 py-2.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-white font-bold flex items-center justify-center gap-2 border border-neutral-600 transition-colors text-sm">
                                                     <RefreshCw size={14} /> REGEN
                                                 </button>
-                                                <button onClick={saveToLibrary}
-                                                    className={`flex-1 py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all text-sm border ${editingLibId ? 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/30' : 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border-emerald-500/30'}`}>
-                                                    <Save size={14} /> {editingLibId ? 'UPDATE' : 'SAVE'}
-                                                </button>
+                                                {editingLibId ? (
+                                                    <div className="flex-1 flex gap-2">
+                                                        <button onClick={saveToLibrary}
+                                                            className="flex-1 py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all text-[11px] border bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/30">
+                                                            UPDATE
+                                                        </button>
+                                                        <button
+                                                            onClick={() => {
+                                                                // Temporarily unset editing ID to force a new save
+                                                                const currentId = editingLibId;
+                                                                setEditingLibId(null);
+                                                                // We need to use a timeout/effect ideally, or just duplicate the save logic
+                                                                // Because state updates are async, the easiest way is to direct duplicate save logic for 'Save As New'
+                                                                const effectiveFill = generatorMode === 'groove' ? 0 : fillAmount;
+                                                                const newItem = {
+                                                                    id: `lib-${Date.now()}`,
+                                                                    name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${generatorMode === 'groove' ? 'Groove' : 'Fill'} (Copy)`,
+                                                                    type: generatorMode,
+                                                                    pattern: pattern.map(s => ({ ...s })),
+                                                                    params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
+                                                                };
+                                                                setLibrary(prev => [...prev, newItem]);
+                                                                setEditingLibId(currentId); // restore edit link
+                                                            }}
+                                                            title="Save as a new pattern"
+                                                            className="py-2.5 px-3 rounded-lg font-bold flex items-center justify-center transition-all text-xs border bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border-emerald-500/30">
+                                                            <Plus size={14} /> NEW
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <button onClick={saveToLibrary}
+                                                        className="flex-1 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm">
+                                                        <Save size={14} /> SAVE
+                                                    </button>
+                                                )}
                                             </div>
                                             {editingLibId && (
                                                 <button onClick={() => setEditingLibId(null)}
