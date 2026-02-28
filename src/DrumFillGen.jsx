@@ -107,53 +107,127 @@ const generatePattern = (genre, complexity, intensity, fillAmount, generatorMode
     const p = Array(steps).fill(null).map(() => ({
         kick: 0, snare: 0, hihat: 0, tomHigh: 0, tomMid: 0, tomLow: 0, crash: 0
     }));
+    const r = () => Math.random();
 
-    // For GROOVE mode: always pure repeating rhythm, no fills
+    // ── GROOVE MODE: rich per-genre variations ──
     if (generatorMode === 'groove') {
         const vol = intensity / 100;
-        const rand = () => Math.random();
+        // Use complexity to pick variation index (0-2)
+        const variant = Math.floor((complexity / 100) * 3);
 
-        if (genre === 'acoustic' || genre === 'funk') {
-            // Standard rock/funk: kick 1&3, snare 2&4, 8th hihats
+        if (genre === 'acoustic') {
+            // Variant 0: Standard rock  1: Half-time  2: Syncopated
+            const hhPat = [0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0];   // 16th grid mask
             for (let i = 0; i < 16; i++) {
-                if (i % 2 === 0) p[i].hihat = 0.55 + rand() * 0.15;
-                if (i === 0 || i === 8) p[i].kick = vol;
-                if (i === 4 || i === 12) p[i].snare = vol;
-                if (genre === 'funk') {
-                    if (i === 10 && rand() > 0.4) p[i].kick = vol * 0.75;
-                    if ((i === 6 || i === 14) && rand() > 0.5) p[i].snare = vol * 0.4;
-                }
+                if (i % 2 === 0) p[i].hihat = 0.55 + r() * 0.15;   // base 8th hats
+                if (variant >= 1 && r() > 0.5) p[i].hihat = Math.max(p[i].hihat, 0.3 + r() * 0.2); // extra 16ths
             }
+            if (variant === 0) {
+                // Standard: kick 1 & 3, snare 2 & 4
+                p[0].kick = vol; p[8].kick = vol;
+                p[4].snare = vol; p[12].snare = vol;
+            } else if (variant === 1) {
+                // Half-time: kick on 1, snare on 3
+                p[0].kick = vol; p[6].kick = vol * 0.7;
+                p[8].snare = vol;
+                if (r() > 0.5) p[14].kick = vol * 0.6; // anticipation
+            } else {
+                // Syncopated: kick on 1, 3+, snare on 2, 4
+                p[0].kick = vol; p[8].kick = vol; p[10].kick = vol * 0.75;
+                p[4].snare = vol; p[12].snare = vol;
+                if (r() > 0.4) p[3].kick = vol * 0.5;
+                if (r() > 0.6) p[15].kick = vol * 0.4; // pickup kick
+            }
+            // Ghost notes on snare
+            if (intensity > 50) {
+                [2, 6, 9, 11, 14].forEach(i => { if (r() > 0.55) p[i].snare = Math.max(p[i].snare, vol * 0.2); });
+            }
+            if (intensity > 80) p[0].crash = 0.8;
+
+        } else if (genre === 'funk') {
+            // Rich 16th-note funk grooves
+            const kickSlots = [[0, 6, 10], [0, 10, 14], [0, 5, 9, 14]];
+            const snareSlots = [[4, 12], [4, 10, 12], [4, 11, 12]];
+            const ghost = [2, 3, 6, 7, 9, 11, 13, 15];
+            (kickSlots[variant] || kickSlots[0]).forEach(i => { p[i].kick = vol * (i === 0 ? 1 : 0.75); });
+            (snareSlots[variant] || snareSlots[0]).forEach(i => { p[i].snare = vol; });
+            for (let i = 0; i < 16; i++) p[i].hihat = (i % 2 === 0 ? 0.55 : 0.35) + r() * 0.1;
+            ghost.forEach(i => { if (r() > 0.45) p[i].snare = Math.max(p[i].snare, vol * (0.15 + r() * 0.2)); });
+            if (complexity > 60 && r() > 0.5) p[0].crash = 0.6;
+
         } else if (genre === 'electronic') {
-            // Four-on-the-floor + rapid hihats
-            for (let i = 0; i < 16; i++) {
-                p[i].hihat = 0.4 + rand() * 0.1;
-                if (i % 4 === 0) p[i].kick = vol;
-                if (i === 4 || i === 12) p[i].snare = vol;
-                if (i === 6 && rand() > 0.4) p[i].kick = vol * 0.7;
+            // Variant 0: Four-on-floor  1: Trap  2: House w/open hats
+            if (variant === 0) {
+                // Classic four-on-the-floor
+                for (let i = 0; i < 16; i++) p[i].hihat = 0.35 + r() * 0.1;
+                [0, 4, 8, 12].forEach(i => p[i].kick = vol);
+                [4, 12].forEach(i => p[i].snare = vol);
+                if (r() > 0.5) p[6].kick = vol * 0.6;
+            } else if (variant === 1) {
+                // Trap: sparse kick, rapid 16th hats with rolls
+                for (let i = 0; i < 16; i++) p[i].hihat = 0.25 + r() * 0.15;
+                // Hat rolls at end of bar
+                [14, 15].forEach(i => p[i].hihat = 0.55 + r() * 0.2);
+                p[0].kick = vol; p[4].kick = vol * 0.7;
+                p[8].snare = vol;
+                if (r() > 0.5) p[11].kick = vol * 0.5;
+                if (r() > 0.6) p[14].kick = vol * 0.4;
+            } else {
+                // House w/ open hats on the & of beats
+                [0, 4, 8, 12].forEach(i => p[i].kick = vol);
+                [4, 12].forEach(i => p[i].snare = vol);
+                for (let i = 0; i < 16; i++) p[i].hihat = i % 2 === 0 ? 0.5 : 0.25;
+                [2, 6, 10, 14].forEach(i => p[i].hihat = 0.55); // open feel on off-beats
+                if (r() > 0.4) p[6].kick = vol * 0.65;
             }
+            if (intensity > 80) p[0].crash = 0.7;
+
         } else if (genre === 'jazz') {
-            // Jazz ride cymbal + light kick/snare comping
-            for (let i = 0; i < 16; i++) {
-                if (i % 4 === 0 || i % 4 === 3) p[i].hihat = 0.5 + rand() * 0.2; // ride feel
-                if (i === 0) p[i].kick = vol * 0.6;
-                if ((i === 4 || i === 12) && rand() > 0.3) p[i].snare = vol * (0.3 + rand() * 0.4);
-                if (i === 6 && rand() > 0.6) p[i].kick = vol * 0.3;
+            // Variant 0: Swing ride  1: Bossa nova  2: Bebop comping
+            if (variant === 0) {
+                // Classic swing ride: beat on 1, skip 2, play 2& and 3
+                [0, 3, 4, 7, 8, 11, 12, 15].forEach(i => p[i].hihat = 0.45 + r() * 0.2);
+                p[0].kick = vol * 0.5;
+                [4, 12].forEach(i => { if (r() > 0.3) p[i].snare = vol * (0.3 + r() * 0.4); });
+                [2, 6, 10, 14].forEach(i => { if (r() > 0.6) p[i].kick = vol * 0.25; }); // comping
+            } else if (variant === 1) {
+                // Bossa nova: right-hand ride, left-hand rim
+                [0, 3, 5, 8, 11, 13].forEach(i => p[i].hihat = 0.4 + r() * 0.15); // clave-ish
+                [2, 10].forEach(i => p[i].snare = vol * 0.35);
+                p[0].kick = vol * 0.7; p[8].kick = vol * 0.5;
+            } else {
+                // Bebop: busy ride, kick/snare sparse
+                for (let i = 0; i < 16; i++) p[i].hihat = r() > 0.3 ? 0.4 + r() * 0.25 : 0;
+                [0, 4, 8, 12].forEach(i => p[i].hihat = 0.6);
+                if (r() > 0.5) p[5].kick = vol * 0.3;
+                if (r() > 0.5) p[9].kick = vol * 0.3;
+                [4, 12].forEach(i => { if (r() > 0.5) p[i].snare = vol * (0.2 + r() * 0.4); });
             }
+
         } else if (genre === 'metal') {
-            // Double kick + snare on 2&4, constant hihats
-            for (let i = 0; i < 16; i++) {
-                if (complexity > 50) {
-                    p[i].kick = vol * (i % 2 === 0 ? 1 : 0.6); // 16th kick
-                } else {
-                    if (i === 0 || i === 8) p[i].kick = vol;
+            // Variant 0: Mid-tempo   1: Full double kick   2: Half-time breakdown
+            [4, 12].forEach(i => p[i].snare = vol);
+            if (variant === 0) {
+                [0, 8].forEach(i => p[i].kick = vol);
+                [2, 6, 10, 14].forEach(i => { if (r() > 0.3) p[i].kick = vol * 0.8; });
+                for (let i = 0; i < 16; i++) p[i].hihat = i % 2 === 0 ? 0.65 : 0.3;
+            } else if (variant === 1) {
+                // Blast-beat style: kick every 16th
+                for (let i = 0; i < 16; i++) {
+                    p[i].kick = vol * (i % 2 === 0 ? 1 : 0.7);
+                    p[i].hihat = 0.6;
                 }
-                p[i].hihat = i % 2 === 0 ? 0.6 : 0.3;
-                if (i === 4 || i === 12) p[i].snare = vol;
+                p[4].kick = 0; p[12].kick = 0; // snare takes those beats
+            } else {
+                // Half-time: kick 1, snare only on 3, heavy double 16ths
+                p[0].kick = vol; p[8].kick = vol; p[9].kick = vol * 0.7;
+                p[8].snare = vol; // half-time snare on 3
+                p[4].snare = 0; p[12].snare = 0;
+                for (let i = 0; i < 16; i++) p[i].hihat = i % 4 === 0 ? 0.7 : (i % 2 === 0 ? 0.45 : 0);
             }
-            if (intensity > 70) p[0].crash = 0.8;
+            if (intensity > 70) p[0].crash = 0.9;
         }
-        // Never has a fill zone
+
         return p;
     }
 
@@ -440,11 +514,28 @@ const DrumFillGen = () => {
         }));
     };
 
-    const clearBarInSegment = (segIndex, barIndex) => {
+    // REMOVE the bar slot entirely from the segment bars array
+    const removeBar = (segIndex, barIndex) => {
         setSegments(prev => prev.map((seg, si) => si !== segIndex ? seg : {
-            ...seg, bars: seg.bars.map((b, bi) => bi === barIndex ? null : b)
+            ...seg, bars: seg.bars.filter((_, bi) => bi !== barIndex)
         }));
     };
+
+    // SEEK playback to a specific global bar, then play
+    const seekToBar = useCallback((globalBarIndex) => {
+        const targetStep = globalBarIndex * 16;
+        if (targetStep >= maxSteps) return;
+        if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
+        if (audioCtxRef.current.state === 'suspended') audioCtxRef.current.resume();
+        clearTimeout(timerIDRef.current);
+        currentStepRef.current = targetStep;
+        nextNoteTimeRef.current = audioCtxRef.current.currentTime;
+        if (!isPlaying) {
+            setIsPlaying(true); // let useEffect kick off the scheduler
+        } else {
+            scheduler(); // already playing — restart scheduler loop from new position
+        }
+    }, [maxSteps, isPlaying, scheduler]);
 
     const deleteSegment = (segIndex) => {
         const seg = segments[segIndex];
@@ -758,37 +849,48 @@ const DrumFillGen = () => {
                                                 let precedingBars = 0;
                                                 for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
                                                 precedingBars += barIndex;
-                                                const globalStart = precedingBars * 16;
+                                                const globalBarIdx = precedingBars;
+                                                const globalStart = globalBarIdx * 16;
                                                 const isCurrent = isPlaying && currentStep >= globalStart && currentStep < globalStart + 16;
 
                                                 return (
                                                     <div key={barIndex}
                                                         onDragOver={(e) => e.preventDefault()}
                                                         onDrop={(e) => handleDropInSegment(e, segIndex, barIndex)}
-                                                        onClick={() => item && clearBarInSegment(segIndex, barIndex)}
-                                                        className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all cursor-pointer
-                                                            ${item ? 'border-transparent bg-neutral-800 hover:bg-rose-900/30 hover:border-rose-500/30 group' : 'border-neutral-700/50 hover:border-neutral-500 hover:bg-neutral-800/30'}`}>
-                                                        {/* Playback fill bar */}
+                                                        onClick={() => item && seekToBar(globalBarIdx)}
+                                                        className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group
+                                                            ${item ? 'border-transparent bg-neutral-800 hover:bg-neutral-700/60 cursor-pointer' : 'border-neutral-700/50 hover:border-neutral-600 hover:bg-neutral-800/20'}
+                                                            ${isCurrent ? 'ring-1 ring-emerald-500/50' : ''}`}>
+
+                                                        {/* Playback progress bar */}
                                                         {isCurrent && (
-                                                            <div className="absolute top-0 left-0 bottom-0 bg-emerald-500/15 z-0 transition-all duration-75"
+                                                            <div className="absolute top-0 left-0 bottom-0 bg-emerald-500/20 z-0 transition-all duration-75"
                                                                 style={{ width: `${((currentStep % 16) / 16) * 100}%` }} />
                                                         )}
 
+                                                        {/* ── Corner X: always shown on hover, removes the slot ── */}
+                                                        <button
+                                                            onClick={(e) => { e.stopPropagation(); removeBar(segIndex, barIndex); }}
+                                                            className="absolute top-1 right-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity bg-neutral-900/70 hover:bg-red-600 text-neutral-400 hover:text-white rounded p-0.5"
+                                                            title="Remove bar slot">
+                                                            <X size={10} />
+                                                        </button>
+
                                                         {item ? (
-                                                            <>
-                                                                <div className="relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-none">
-                                                                    <span className="text-[11px] font-bold text-gray-200">{item.name}</span>
-                                                                    <span className={`text-[9px] mt-0.5 ${item.type === 'fill' ? 'text-rose-400' : 'text-emerald-400'}`}>{item.type}</span>
+                                                            <div className="relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-none px-4">
+                                                                <span className="text-[11px] font-bold text-gray-200 truncate w-full text-center">{item.name}</span>
+                                                                <div className="flex items-center gap-1 mt-0.5">
+                                                                    <span className={`text-[9px] ${item.type === 'fill' ? 'text-rose-400' : 'text-emerald-400'}`}>{item.type}</span>
+                                                                    {isCurrent && <span className="text-[8px] text-emerald-400 font-bold animate-pulse">▶ PLAYING</span>}
+                                                                    {!isCurrent && <span className="text-[8px] text-neutral-600">click to play</span>}
                                                                 </div>
-                                                                {/* Delete hint on hover */}
-                                                                <div className="absolute inset-0 bg-rose-900/40 opacity-0 group-hover:opacity-100 flex items-center justify-center z-20 transition-opacity pointer-events-none">
-                                                                    <X size={18} className="text-rose-300" />
-                                                                </div>
-                                                            </>
+                                                            </div>
                                                         ) : (
-                                                            <span className="text-[10px] text-neutral-600">Drop Here</span>
+                                                            <span className="text-[10px] text-neutral-600 pointer-events-none">Drop Here</span>
                                                         )}
-                                                        <div className="absolute top-1 left-1.5 text-[8px] font-mono text-neutral-700 font-bold z-30">B{barIndex + 1}</div>
+
+                                                        {/* Bar number bottom-left */}
+                                                        <div className="absolute bottom-1 left-1.5 text-[8px] font-mono text-neutral-700 font-bold z-10">B{barIndex + 1}</div>
                                                     </div>
                                                 );
                                             })}
