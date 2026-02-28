@@ -859,15 +859,16 @@ const DrumFillGen = () => {
                                 {segments.map((segment, segIndex) => (
                                     <div key={segment.id} className="w-44 shrink-0 flex flex-col">
                                         {/* Segment header */}
-                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center">
+                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center group/seg">
                                             <input value={segment.name}
                                                 onChange={(e) => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, name: e.target.value }))}
                                                 className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-2 border-none outline-none text-gray-200" />
                                             <button onClick={() => deleteSegment(segIndex)}
-                                                className="text-neutral-600 hover:text-red-400 px-2 transition-colors" title="Delete segment">
-                                                <Trash2 size={14} />
+                                                className="opacity-0 group-hover/seg:opacity-100 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 px-2 py-2 rounded transition-all" title="Delete segment">
+                                                <Trash2 size={13} />
                                             </button>
                                         </div>
+
 
                                         {/* Bars */}
                                         <div className="bg-neutral-900/50 border border-t-0 border-neutral-800 rounded-b-lg p-2 flex flex-col gap-2 min-h-[80px]">
