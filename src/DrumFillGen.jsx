@@ -542,16 +542,13 @@ const DrumFillGen = () => {
         if (isPlaying) {
             if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
             if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
-            // Start from where we are instead of resetting to 0 if in generator mode
-            if (appMode !== "generator") {
-                currentStepRef.current = 0;
-            }
             nextNoteTimeRef.current = audioCtxRef.current.currentTime;
 
             scheduler();
         } else {
             clearTimeout(timerIDRef.current);
             setCurrentStep(-1);
+            currentStepRef.current = 0; // Rewind to beginning on STOP
         }
         return () => clearTimeout(timerIDRef.current);
     }, [isPlaying, scheduler, appMode]);
