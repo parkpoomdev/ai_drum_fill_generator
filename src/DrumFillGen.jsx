@@ -319,19 +319,30 @@ const ConfirmModal = ({ message, onConfirm, onCancel }) => (
 // MINI PATTERN PREVIEW (for library items)
 // ─────────────────────────────────────────────
 const MiniPattern = ({ pattern }) => {
-    const activeRows = ['kick', 'snare', 'hihat'];
+    const rows = [
+        { id: 'hihat', color: 'bg-yellow-500' },
+        { id: 'snare', color: 'bg-red-500' },
+        { id: 'kick', color: 'bg-blue-500' }
+    ];
     return (
-        <div className="mt-1.5 flex flex-col gap-px w-full">
-            {activeRows.map(inst => (
-                <div key={inst} className="flex gap-px h-1.5">
-                    {pattern.slice(0, 16).map((step, i) => (
-                        <div key={i} className={`flex-1 rounded-[1px] ${step[inst] > 0 ? 'bg-emerald-500/70' : 'bg-neutral-700'}`} />
-                    ))}
+        <div className="mt-1.5 flex flex-col gap-[2px] w-full bg-black/20 p-1 rounded-sm border border-black/10">
+            {rows.map(row => (
+                <div key={row.id} className="flex gap-[1px] h-[3px]">
+                    {(pattern || Array(16).fill({})).slice(0, 16).map((step, i) => {
+                        const val = step[row.id] || 0;
+                        return (
+                            <div key={i}
+                                className={`flex-1 rounded-[0.5px] ${val > 0 ? row.color : 'bg-neutral-800'}`}
+                                style={{ opacity: val > 0 ? 0.3 + val * 0.7 : 1 }}
+                            />
+                        );
+                    })}
                 </div>
             ))}
         </div>
     );
 };
+
 
 // ─────────────────────────────────────────────
 // MAIN COMPONENT
@@ -496,23 +507,24 @@ const DrumFillGen = () => {
         const effectiveFill = generatorMode === 'groove' ? 0 : fillAmount;
 
         if (editingLibId) {
-            // Update existing
+            // Update existing with deep copy
             setLibrary(prev => prev.map(l => l.id === editingLibId ? {
                 ...l,
-                pattern: [...pattern],
+                pattern: pattern.map(s => ({ ...s })),
                 params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
             } : l));
         } else {
-            // Add new
+            // Add new with deep copy
             const newItem = {
                 id: `lib-${Date.now()}`,
                 name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${generatorMode === 'groove' ? 'Groove' : 'Fill'}`,
                 type: generatorMode,
-                pattern: [...pattern],
+                pattern: pattern.map(s => ({ ...s })),
                 params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
             };
             setLibrary(prev => [...prev, newItem]);
         }
+
     };
 
 
@@ -680,8 +692,10 @@ const DrumFillGen = () => {
                                     </button>
                                 </div>
                             </div>
-                            <MiniPattern pattern={item.pattern} />
+                            {/* LIVE PREVIEW in library: if editing, show current generator pattern, else show saved pattern */}
+                            <MiniPattern pattern={(editingLibId === item.id && appMode === "generator") ? pattern : item.pattern} />
                             <div className="text-[9px] text-neutral-600 mt-1 flex justify-between items-center">
+
                                 <span>{editingLibId === item.id ? "Editing..." : "Double-click to edit"}</span>
                                 {isItemPlaying && <span className="text-emerald-500 font-bold animate-pulse text-[8px]">PLAYING</span>}
                             </div>
