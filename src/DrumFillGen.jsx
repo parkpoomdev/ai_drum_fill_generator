@@ -366,15 +366,24 @@ const DrumFillGen = () => {
         { id: "seg-1", name: "Intro", bars: ["lib-1", null, null, null] },
         { id: "seg-2", name: "Verse", bars: ["lib-1", "lib-1", "lib-1", "lib-2"] }
     ]);
-    const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
-    const [renamingId, setRenamingId] = useState(null);      // id of lib item being renamed
+    const [confirmModal, setConfirmModal] = useState(null);
+    const [renamingId, setRenamingId] = useState(null);
     const [renameValue, setRenameValue] = useState("");
+    const [openSegMenu, setOpenSegMenu] = useState(null); // segIndex of open kebab menu
 
     // ── Refs ──
     const audioCtxRef = useRef(null);
     const nextNoteTimeRef = useRef(0);
     const currentStepRef = useRef(0);
     const timerIDRef = useRef(null);
+
+    // Close segment kebab menu on outside click
+    useEffect(() => {
+        if (openSegMenu === null) return;
+        const close = () => setOpenSegMenu(null);
+        window.addEventListener('click', close);
+        return () => window.removeEventListener('click', close);
+    }, [openSegMenu]);
 
     // ── Active pattern for playback ──
     const activePattern = useMemo(() => {
@@ -859,16 +868,31 @@ const DrumFillGen = () => {
                                 {segments.map((segment, segIndex) => (
                                     <div key={segment.id} className="w-44 shrink-0 flex flex-col">
                                         {/* Segment header */}
-                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center group/seg">
+                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center">
                                             <input value={segment.name}
                                                 onChange={(e) => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, name: e.target.value }))}
                                                 className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-2 border-none outline-none text-gray-200" />
-                                            <button onClick={() => deleteSegment(segIndex)}
-                                                className="opacity-0 group-hover/seg:opacity-100 text-neutral-500 hover:text-red-400 hover:bg-red-500/10 px-2 py-2 rounded transition-all" title="Delete segment">
-                                                <Trash2 size={13} />
-                                            </button>
-                                        </div>
 
+                                            {/* ⋮ Kebab menu */}
+                                            <div className="relative shrink-0">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setOpenSegMenu(openSegMenu === segIndex ? null : segIndex); }}
+                                                    className="text-neutral-500 hover:text-white px-2 py-2 rounded hover:bg-neutral-700 transition-colors text-base leading-none"
+                                                    title="Segment options"
+                                                >⋮</button>
+                                                {openSegMenu === segIndex && (
+                                                    <div
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="absolute right-0 top-full mt-1 w-36 bg-neutral-800 border border-neutral-600 rounded-lg shadow-2xl z-50 overflow-hidden">
+                                                        <button
+                                                            onClick={() => { deleteSegment(segIndex); setOpenSegMenu(null); }}
+                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left">
+                                                            <Trash2 size={12} /> Delete Segment
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
 
                                         {/* Bars */}
                                         <div className="bg-neutral-900/50 border border-t-0 border-neutral-800 rounded-b-lg p-2 flex flex-col gap-2 min-h-[80px]">
