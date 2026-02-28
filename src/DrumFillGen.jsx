@@ -370,6 +370,7 @@ const DrumFillGen = () => {
     const [renamingId, setRenamingId] = useState(null);
     const [renameValue, setRenameValue] = useState("");
     const [openSegMenu, setOpenSegMenu] = useState(null); // segIndex of open kebab menu
+    const [editingLibId, setEditingLibId] = useState(null); // id of lib item currently loaded in generator
 
     // ── Refs ──
     const audioCtxRef = useRef(null);
@@ -476,8 +477,12 @@ const DrumFillGen = () => {
         if (isPlaying) {
             if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
             if (audioCtxRef.current.state === "suspended") audioCtxRef.current.resume();
-            currentStepRef.current = 0;
+            // Start from where we are instead of resetting to 0 if in generator mode
+            if (appMode !== "generator") {
+                currentStepRef.current = 0;
+            }
             nextNoteTimeRef.current = audioCtxRef.current.currentTime;
+
             scheduler();
         } else {
             clearTimeout(timerIDRef.current);
@@ -489,15 +494,27 @@ const DrumFillGen = () => {
     // ── Library helpers ──
     const saveToLibrary = () => {
         const effectiveFill = generatorMode === 'groove' ? 0 : fillAmount;
-        const newItem = {
-            id: `lib-${Date.now()}`,
-            name: `${genre} ${generatorMode === 'groove' ? 'Groove' : 'Fill'}`,
-            type: generatorMode,
-            pattern: [...pattern],
-            params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
-        };
-        setLibrary(prev => [...prev, newItem]);
+
+        if (editingLibId) {
+            // Update existing
+            setLibrary(prev => prev.map(l => l.id === editingLibId ? {
+                ...l,
+                pattern: [...pattern],
+                params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
+            } : l));
+        } else {
+            // Add new
+            const newItem = {
+                id: `lib-${Date.now()}`,
+                name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${generatorMode === 'groove' ? 'Groove' : 'Fill'}`,
+                type: generatorMode,
+                pattern: [...pattern],
+                params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
+            };
+            setLibrary(prev => [...prev, newItem]);
+        }
     };
+
 
     const loadFromLibrary = (libItem) => {
         // Double-click: load params into generator and switch to generator mode
@@ -508,9 +525,11 @@ const DrumFillGen = () => {
         setFillAmount(params.fillAmount);
         setGeneratorMode(params.generatorMode);
         setPattern([...libItem.pattern]);
+        setEditingLibId(libItem.id);
         setAppMode("generator");
         setIsPlaying(false);
     };
+
 
     const renameLibraryItem = (id, newName) => {
         setLibrary(prev => prev.map(l => l.id === id ? { ...l, name: newName.trim() || l.name } : l));
@@ -598,51 +617,78 @@ const DrumFillGen = () => {
                         No patterns yet.<br />Generate & save!
                     </div>
                 )}
-                {library.map(item => (
-                    <div key={item.id}
-                        draggable={renamingId !== item.id}
-                        onDragStart={(e) => renamingId !== item.id && e.dataTransfer.setData("libraryId", item.id)}
-                        onDoubleClick={() => renamingId !== item.id && loadFromLibrary(item)}
-                        className="bg-neutral-800 border border-neutral-700 p-2.5 rounded-lg cursor-grab hover:bg-neutral-750 transition-colors active:cursor-grabbing group select-none relative"
-                        title="Click name to rename • Drag to arrange • Double-click to re-edit"
-                    >
-                        <div className="flex items-center justify-between gap-1">
-                            {renamingId === item.id ? (
-                                <input
-                                    autoFocus
-                                    value={renameValue}
-                                    onChange={(e) => setRenameValue(e.target.value)}
-                                    onBlur={() => renameLibraryItem(item.id, renameValue)}
-                                    onKeyDown={(e) => {
-                                        if (e.key === 'Enter') renameLibraryItem(item.id, renameValue);
-                                        if (e.key === 'Escape') setRenamingId(null);
-                                    }}
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex-1 text-xs font-bold bg-neutral-700 text-white rounded px-1 py-0.5 border border-indigo-500 outline-none min-w-0"
-                                />
-                            ) : (
-                                <span
-                                    className="text-xs font-bold text-gray-200 truncate pr-1 cursor-text hover:text-white flex-1"
-                                    onClick={(e) => { e.stopPropagation(); setRenamingId(item.id); setRenameValue(item.name); }}
-                                    title="Click to rename"
-                                >
-                                    {item.name}
-                                </span>
-                            )}
-                            <div className="flex items-center gap-1 shrink-0">
-                                <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded ${item.type === 'fill' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
-                                    {item.type}
-                                </span>
-                                <button onClick={(e) => { e.stopPropagation(); deleteFromLibrary(item.id); }}
-                                    className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-red-400 transition-all">
-                                    <X size={12} />
-                                </button>
+                {library.map(item => {
+                    const isItemPlaying = isPlaying && appMode === "generator" && editingLibId === item.id;
+                    return (
+                        <div key={item.id}
+                            draggable={renamingId !== item.id}
+                            onDragStart={(e) => renamingId !== item.id && e.dataTransfer.setData("libraryId", item.id)}
+                            onDoubleClick={() => renamingId !== item.id && loadFromLibrary(item)}
+                            className={`bg-neutral-800 border p-2.5 rounded-lg cursor-grab hover:bg-neutral-750 transition-all active:cursor-grabbing group select-none relative
+                                ${editingLibId === item.id ? 'border-indigo-500/50 shadow-lg shadow-indigo-500/10' : 'border-neutral-700'}`}
+                            title="Click name to rename • Drag to arrange • Double-click to re-edit"
+                        >
+                            <div className="flex items-center justify-between gap-1">
+                                <div className="flex items-center gap-1.5 flex-1 min-w-0">
+                                    {/* Small Play/Preview button on library items */}
+                                    <button
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            if (editingLibId === item.id && isPlaying) {
+                                                setIsPlaying(false);
+                                            } else {
+                                                loadFromLibrary(item);
+                                                // Trigger play after load
+                                                setTimeout(() => setIsPlaying(true), 50);
+                                            }
+                                        }}
+                                        className={`shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-colors ${isItemPlaying ? 'bg-red-500 text-white' : 'bg-neutral-700 text-gray-400 hover:bg-emerald-500 hover:text-white'}`}
+                                    >
+                                        {isItemPlaying ? <Square size={8} fill="currentColor" /> : <Play size={8} fill="currentColor" className="ml-0.5" />}
+                                    </button>
+
+                                    {renamingId === item.id ? (
+                                        <input
+                                            autoFocus
+                                            value={renameValue}
+                                            onChange={(e) => setRenameValue(e.target.value)}
+                                            onBlur={() => renameLibraryItem(item.id, renameValue)}
+                                            onKeyDown={(e) => {
+                                                if (e.key === 'Enter') renameLibraryItem(item.id, renameValue);
+                                                if (e.key === 'Escape') setRenamingId(null);
+                                            }}
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="flex-1 text-xs font-bold bg-neutral-700 text-white rounded px-1 py-0.5 border border-indigo-500 outline-none min-w-0"
+                                        />
+                                    ) : (
+                                        <span
+                                            className="text-xs font-bold text-gray-200 truncate cursor-text hover:text-white"
+                                            onClick={(e) => { e.stopPropagation(); setRenamingId(item.id); setRenameValue(item.name); }}
+                                            title="Click to rename"
+                                        >
+                                            {item.name}
+                                        </span>
+                                    )}
+                                </div>
+                                <div className="flex items-center gap-1 shrink-0">
+                                    <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded ${item.type === 'fill' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                        {item.type}
+                                    </span>
+                                    <button onClick={(e) => { e.stopPropagation(); deleteFromLibrary(item.id); }}
+                                        className="opacity-0 group-hover:opacity-100 text-neutral-500 hover:text-red-400 transition-all">
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            </div>
+                            <MiniPattern pattern={item.pattern} />
+                            <div className="text-[9px] text-neutral-600 mt-1 flex justify-between items-center">
+                                <span>{editingLibId === item.id ? "Editing..." : "Double-click to edit"}</span>
+                                {isItemPlaying && <span className="text-emerald-500 font-bold animate-pulse text-[8px]">PLAYING</span>}
                             </div>
                         </div>
-                        <MiniPattern pattern={item.pattern} />
-                        <div className="text-[9px] text-neutral-600 mt-1">Click name to rename • Double-click to re-edit</div>
-                    </div>
-                ))}
+                    );
+                })}
+
             </div>
         </div>
     );
@@ -765,16 +811,25 @@ const DrumFillGen = () => {
                                                     className="w-full h-2 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-rose-500" />
                                             </div>
                                         )}
-                                        <div className="flex gap-2 pt-2">
-                                            <button onClick={() => setPattern(generatePattern(genre, complexity, intensity, generatorMode === 'groove' ? 0 : fillAmount, generatorMode))}
-                                                className="flex-1 py-2.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-white font-bold flex items-center justify-center gap-2 border border-neutral-600 transition-colors text-sm">
-                                                <RefreshCw size={14} /> REGEN
-                                            </button>
-                                            <button onClick={saveToLibrary}
-                                                className="flex-1 py-2.5 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border border-emerald-500/30 rounded-lg font-bold flex items-center justify-center gap-2 transition-colors text-sm">
-                                                <Save size={14} /> SAVE
-                                            </button>
+                                        <div className="flex flex-col gap-2 pt-2">
+                                            <div className="flex gap-2">
+                                                <button onClick={() => setPattern(generatePattern(genre, complexity, intensity, generatorMode === 'groove' ? 0 : fillAmount, generatorMode))}
+                                                    className="flex-1 py-2.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-white font-bold flex items-center justify-center gap-2 border border-neutral-600 transition-colors text-sm">
+                                                    <RefreshCw size={14} /> REGEN
+                                                </button>
+                                                <button onClick={saveToLibrary}
+                                                    className={`flex-1 py-2.5 rounded-lg font-bold flex items-center justify-center gap-2 transition-all text-sm border ${editingLibId ? 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/30' : 'bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-400 border-emerald-500/30'}`}>
+                                                    <Save size={14} /> {editingLibId ? 'UPDATE' : 'SAVE'}
+                                                </button>
+                                            </div>
+                                            {editingLibId && (
+                                                <button onClick={() => setEditingLibId(null)}
+                                                    className="w-full py-1 text-[10px] font-bold text-neutral-500 hover:text-neutral-300 transition-colors uppercase tracking-widest">
+                                                    Cancel Editing / New Workspace
+                                                </button>
+                                            )}
                                         </div>
+
                                     </div>
                                 </div>
                             </div>
