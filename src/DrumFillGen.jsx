@@ -367,6 +367,8 @@ const DrumFillGen = () => {
         { id: "seg-2", name: "Verse", bars: ["lib-1", "lib-1", "lib-1", "lib-2"] }
     ]);
     const [confirmModal, setConfirmModal] = useState(null); // { message, onConfirm }
+    const [renamingId, setRenamingId] = useState(null);      // id of lib item being renamed
+    const [renameValue, setRenameValue] = useState("");
 
     // ── Refs ──
     const audioCtxRef = useRef(null);
@@ -501,6 +503,11 @@ const DrumFillGen = () => {
         setIsPlaying(false);
     };
 
+    const renameLibraryItem = (id, newName) => {
+        setLibrary(prev => prev.map(l => l.id === id ? { ...l, name: newName.trim() || l.name } : l));
+        setRenamingId(null);
+    };
+
     const deleteFromLibrary = (id) => {
         setLibrary(prev => prev.filter(l => l.id !== id));
     };
@@ -584,14 +591,35 @@ const DrumFillGen = () => {
                 )}
                 {library.map(item => (
                     <div key={item.id}
-                        draggable="true"
-                        onDragStart={(e) => e.dataTransfer.setData("libraryId", item.id)}
-                        onDoubleClick={() => loadFromLibrary(item)}
+                        draggable={renamingId !== item.id}
+                        onDragStart={(e) => renamingId !== item.id && e.dataTransfer.setData("libraryId", item.id)}
+                        onDoubleClick={() => renamingId !== item.id && loadFromLibrary(item)}
                         className="bg-neutral-800 border border-neutral-700 p-2.5 rounded-lg cursor-grab hover:bg-neutral-750 transition-colors active:cursor-grabbing group select-none relative"
-                        title="Drag to arrange • Double-click to re-edit"
+                        title="Click name to rename • Drag to arrange • Double-click to re-edit"
                     >
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-bold text-gray-200 truncate pr-1">{item.name}</span>
+                        <div className="flex items-center justify-between gap-1">
+                            {renamingId === item.id ? (
+                                <input
+                                    autoFocus
+                                    value={renameValue}
+                                    onChange={(e) => setRenameValue(e.target.value)}
+                                    onBlur={() => renameLibraryItem(item.id, renameValue)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') renameLibraryItem(item.id, renameValue);
+                                        if (e.key === 'Escape') setRenamingId(null);
+                                    }}
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex-1 text-xs font-bold bg-neutral-700 text-white rounded px-1 py-0.5 border border-indigo-500 outline-none min-w-0"
+                                />
+                            ) : (
+                                <span
+                                    className="text-xs font-bold text-gray-200 truncate pr-1 cursor-text hover:text-white flex-1"
+                                    onClick={(e) => { e.stopPropagation(); setRenamingId(item.id); setRenameValue(item.name); }}
+                                    title="Click to rename"
+                                >
+                                    {item.name}
+                                </span>
+                            )}
                             <div className="flex items-center gap-1 shrink-0">
                                 <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded ${item.type === 'fill' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
                                     {item.type}
@@ -603,7 +631,7 @@ const DrumFillGen = () => {
                             </div>
                         </div>
                         <MiniPattern pattern={item.pattern} />
-                        <div className="text-[9px] text-neutral-600 mt-1">Double-click to re-edit</div>
+                        <div className="text-[9px] text-neutral-600 mt-1">Click name to rename • Double-click to re-edit</div>
                     </div>
                 ))}
             </div>
