@@ -868,10 +868,21 @@ const DrumFillGen = () => {
                                 {segments.map((segment, segIndex) => (
                                     <div key={segment.id} className="w-44 shrink-0 flex flex-col">
                                         {/* Segment header */}
-                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center">
+                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center group/seghead">
+                                            <button
+                                                onClick={() => {
+                                                    let precedingBars = 0;
+                                                    for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
+                                                    seekToBar(precedingBars);
+                                                }}
+                                                className="pl-2.5 text-neutral-500 hover:text-emerald-400 transition-colors"
+                                                title={`Play ${segment.name}`}
+                                            >
+                                                <Play size={12} fill="currentColor" />
+                                            </button>
                                             <input value={segment.name}
                                                 onChange={(e) => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, name: e.target.value }))}
-                                                className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-2 border-none outline-none text-gray-200" />
+                                                className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-1 border-none outline-none text-gray-200" />
 
                                             {/* ⋮ Kebab menu */}
                                             <div className="relative shrink-0">
