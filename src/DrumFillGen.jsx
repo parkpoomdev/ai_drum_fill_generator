@@ -553,18 +553,47 @@ const DrumFillGen = () => {
     };
 
     // ── Arrangement helpers ──
-    const handleDropInSegment = (e, segIndex, barIndex) => {
+    const handleDropInSegment = (e, targetSegIndex, targetBarIndex) => {
         const libId = e.dataTransfer.getData("libraryId");
-        if (!libId) return;
-        setSegments(prev => prev.map((seg, si) => si !== segIndex ? seg : {
-            ...seg, bars: seg.bars.map((b, bi) => bi === barIndex ? libId : b)
-        }));
+        if (libId) {
+            setSegments(prev => prev.map((seg, si) => si !== targetSegIndex ? seg : {
+                ...seg, bars: seg.bars.map((b, bi) => bi === targetBarIndex ? libId : b)
+            }));
+            return;
+        }
+
+        const dragType = e.dataTransfer.getData("type");
+        if (dragType === "bar") {
+            const srcSeg = parseInt(e.dataTransfer.getData("segIndex"), 10);
+            const srcBar = parseInt(e.dataTransfer.getData("barIndex"), 10);
+            if (srcSeg === targetSegIndex && srcBar === targetBarIndex) return;
+
+            setSegments(prev => {
+                const next = [...prev];
+                const srcItem = next[srcSeg].bars[srcBar];
+                const targetItem = next[targetSegIndex].bars[targetBarIndex];
+
+                const updatedSrcBars = [...next[srcSeg].bars];
+                const updatedTargetBars = srcSeg === targetSegIndex ? updatedSrcBars : [...next[targetSegIndex].bars];
+
+                updatedSrcBars[srcBar] = targetItem;
+                updatedTargetBars[targetBarIndex] = srcItem;
+
+                next[srcSeg] = { ...next[srcSeg], bars: updatedSrcBars };
+                if (srcSeg !== targetSegIndex) {
+                    next[targetSegIndex] = { ...next[targetSegIndex], bars: updatedTargetBars };
+                }
+                return next;
+            });
+        }
     };
 
-    // REMOVE the bar slot entirely from the segment bars array
+    // KEEP the bar slot, just clear its content. If already empty, remove it completely.
     const removeBar = (segIndex, barIndex) => {
         setSegments(prev => prev.map((seg, si) => si !== segIndex ? seg : {
-            ...seg, bars: seg.bars.filter((_, bi) => bi !== barIndex)
+            ...seg, bars: seg.bars[barIndex] === null
+                ? seg.bars.filter((_, bi) => bi !== barIndex)
+                : seg.bars.map((b, bi) => bi === barIndex ? null : b)
         }));
     };
 
@@ -1019,12 +1048,18 @@ const DrumFillGen = () => {
 
                                                 return (
                                                     <div key={barIndex}
+                                                        draggable={true}
+                                                        onDragStart={(e) => {
+                                                            e.dataTransfer.setData("type", "bar");
+                                                            e.dataTransfer.setData("segIndex", segIndex);
+                                                            e.dataTransfer.setData("barIndex", barIndex);
+                                                        }}
                                                         onDragOver={(e) => e.preventDefault()}
                                                         onDrop={(e) => handleDropInSegment(e, segIndex, barIndex)}
                                                         onClick={() => item && seekToBar(globalBarIdx)}
                                                         className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group
                                                             ${item ? 'border-transparent bg-neutral-800 hover:bg-neutral-700/60 cursor-pointer' : 'border-neutral-700/50 hover:border-neutral-600 hover:bg-neutral-800/20'}
-                                                            ${isCurrent ? 'ring-1 ring-emerald-500/50' : ''}`}>
+                                                            ${isCurrent ? 'ring-1 ring-emerald-500/50' : ''} cursor-grab active:cursor-grabbing`}>
 
                                                         {/* Playback progress bar */}
                                                         {isCurrent && (
