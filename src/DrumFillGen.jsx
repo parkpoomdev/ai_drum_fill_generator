@@ -944,6 +944,25 @@ const DrumFillGen = () => {
                 )}
             </div>
 
+            {/* ── FOOTER ── */}
+            <div className="shrink-0 bg-neutral-950 border-t border-neutral-800 px-6 py-2.5 flex items-center justify-between text-[10px] text-neutral-600">
+                <div className="flex items-center gap-2">
+                    <span className="text-emerald-600 font-bold tracking-wider">AI DRUM SYSTEM</span>
+                    <span className="text-neutral-700">•</span>
+                    <span>Designed &amp; Built by</span>
+                    <span className="text-neutral-400 font-semibold">Parkpoom Wisedsri</span>
+                    <span className="text-neutral-700">•</span>
+                    <a href="mailto:parkpoom.wisedsri@gmail.com"
+                        className="text-neutral-500 hover:text-emerald-400 transition-colors underline underline-offset-2">
+                        parkpoom.wisedsri@gmail.com
+                    </a>
+                </div>
+                <div className="flex items-center gap-1.5 text-neutral-700">
+                    <span>AI Collaboration</span>
+                    <span className="text-indigo-600 font-semibold">Antigravity / Google DeepMind</span>
+                </div>
+            </div>
+
             <style jsx>{`
                 .custom-scrollbar::-webkit-scrollbar { width: 4px; }
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
