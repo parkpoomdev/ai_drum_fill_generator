@@ -534,8 +534,6 @@ const PianoRollBlock = ({
   isCurrent = false,
   currentStep = -1,
   globalStart = 0,
-  octaveOffset = 0,
-  onOctaveChange,
   audioCtx = null,
   pianoInst = null,
 }) => {
@@ -544,8 +542,6 @@ const PianoRollBlock = ({
   const ROW_COUNT = 36; // 3 chromatic octaves (C3–B5)
   const ROW_HEIGHT = 14; // px per pitch lane — smaller so C3–A4 fits in viewport
   const PITCH_MAX = ROW_COUNT - 1;
-  const OCTAVE_MIN = -3;
-  const OCTAVE_MAX = 3;
   const rows = Array.from({ length: ROW_COUNT }, (_, i) => ROW_COUNT - 1 - i);
 
   // Compute display note names for the piano roll rows
@@ -564,9 +560,8 @@ const PianoRollBlock = ({
     "B",
   ];
   const midiForRow = (r) => BASE_MIDI + r;
-  const visualMidiForRow = (r) => BASE_MIDI + r + octaveOffset * 12;
   const labelForRow = (r) => {
-    const midi = visualMidiForRow(r);
+    const midi = midiForRow(r);
     const oct = Math.floor(midi / 12) - 1;
     return `${NOTE_NAMES[midi % 12]}${oct}`;
   };
@@ -575,7 +570,7 @@ const PianoRollBlock = ({
   const visiblePitchBottom = 0;
   const scrollRef = useRef(null);
 
-  // Auto-scroll piano roll to show C3–A4 by default (chord range at bottom, melody range in middle)
+  // Auto-scroll piano roll to show C3–A4 by default
   useEffect(() => {
     if (scrollRef.current) {
       const VISIBLE_H = 300;
@@ -587,11 +582,6 @@ const PianoRollBlock = ({
       );
     }
   }, []);
-
-  const transposeLabel = (v) => {
-    if (v === 0) return "C0";
-    return v > 0 ? `C+${v}` : `C${v}`;
-  };
 
   // Drag state for notes
   const [draggingNoteId, setDraggingNoteId] = useState(null);
@@ -763,7 +753,9 @@ const PianoRollBlock = ({
         Bb: 58,
         B: 59,
       };
-      const root = rootToMidi[normalizedRoot] || 48;
+      // Apply per-chord octave (default oct 3 = C3 register)
+      const baseRoot = rootToMidi[normalizedRoot] || 48;
+      const root = baseRoot + ((chord.octave ?? 3) - 3) * 12;
       const pitches = [root];
       if (inferredQuality === "Minor") pitches.push(root + 3, root + 7);
       else if (inferredQuality === "7")
@@ -834,41 +826,6 @@ const PianoRollBlock = ({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* Chord Transpose Group (visual only for chord lane) */}
-      <div className="bg-neutral-900 border-b border-neutral-800 px-2 py-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest mr-1">
-            Chord Transpose Group
-          </span>
-          <div className="flex flex-wrap items-center gap-1 bg-neutral-800/70 border border-neutral-700 rounded px-1 py-1">
-            {Array.from(
-              { length: OCTAVE_MAX - OCTAVE_MIN + 1 },
-              (_, idx) => OCTAVE_MIN + idx,
-            ).map((v) => (
-              <button
-                key={v}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onOctaveChange(v);
-                }}
-                className={`h-6 px-2 rounded text-[9px] font-bold transition-colors border ${
-                  octaveOffset === v
-                    ? "bg-indigo-600 border-indigo-400 text-white shadow-md"
-                    : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-700 hover:text-white"
-                }`}
-                title={`Visual transpose ${transposeLabel(v)} (MIDI playback unchanged)`}
-              >
-                {transposeLabel(v)}
-              </button>
-            ))}
-          </div>
-          <span className="text-[9px] text-neutral-600 font-mono ml-auto">
-            Visual {labelForRow(visiblePitchBottom)} –{" "}
-            {labelForRow(visiblePitchTop)}
-          </span>
-        </div>
-      </div>
-
       {/* Chords Track */}
       <div className="flex items-center bg-neutral-800 border-b border-neutral-700 h-8 relative">
         <div className="flex items-center px-2 border-r border-neutral-700 text-[10px] font-bold text-neutral-400 w-12 shrink-0">
@@ -916,10 +873,15 @@ const PianoRollBlock = ({
                       e.stopPropagation();
                       playChordPreview(chord);
                     }}
-                    className="min-w-0 flex-1 text-left truncate text-[10px] font-bold text-indigo-200"
+                    className="min-w-0 flex-1 text-left flex items-baseline gap-1 overflow-hidden"
                     title="Click to preview"
                   >
-                    {formatChordLabel(chord)}
+                    <span className="truncate text-[10px] font-bold text-indigo-200 leading-none">
+                      {formatChordLabel(chord)}
+                    </span>
+                    <span className="text-[7px] text-indigo-400/70 font-mono shrink-0 leading-none">
+                      oct{chord.octave ?? 3}
+                    </span>
                   </button>
 
                   <span
@@ -990,6 +952,45 @@ const PianoRollBlock = ({
                         {q}
                       </button>
                     ))}
+                  </div>
+                  {/* Octave control */}
+                  <div className="flex items-center justify-between mt-2 pt-1.5 border-t border-indigo-900/40">
+                    <span className="text-[8px] text-indigo-300 font-bold uppercase tracking-widest">
+                      Octave
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => {
+                          const newC = [...chords];
+                          newC[i] = {
+                            ...newC[i],
+                            octave: Math.max(1, (chord.octave ?? 3) - 1),
+                          };
+                          onChordsChange(newC);
+                          playChordPreview(newC[i]);
+                        }}
+                        className="w-5 h-5 rounded bg-neutral-700 hover:bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center leading-none"
+                      >
+                        −
+                      </button>
+                      <span className="text-[10px] text-white font-bold font-mono w-4 text-center">
+                        {chord.octave ?? 3}
+                      </span>
+                      <button
+                        onClick={() => {
+                          const newC = [...chords];
+                          newC[i] = {
+                            ...newC[i],
+                            octave: Math.min(6, (chord.octave ?? 3) + 1),
+                          };
+                          onChordsChange(newC);
+                          playChordPreview(newC[i]);
+                        }}
+                        className="w-5 h-5 rounded bg-neutral-700 hover:bg-indigo-600 text-white text-[11px] font-bold flex items-center justify-center leading-none"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
                 </div>
 
@@ -1139,6 +1140,52 @@ const PianoRollBlock = ({
                         </div>
                       </div>
 
+                      {/* Octave */}
+                      <div>
+                        <div className="text-[8px] font-bold text-neutral-500 uppercase tracking-widest mb-1">
+                          Octave Register
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => {
+                              const newC = [...chords];
+                              newC[i] = {
+                                ...newC[i],
+                                octave: Math.max(1, (chord.octave ?? 3) - 1),
+                              };
+                              onChordsChange(newC);
+                              playChordPreview(newC[i]);
+                            }}
+                            className="w-7 h-7 rounded bg-neutral-700 hover:bg-indigo-600 text-white text-[14px] font-bold flex items-center justify-center leading-none transition-colors"
+                          >
+                            −
+                          </button>
+                          <div className="flex-1 text-center">
+                            <span className="text-[13px] font-bold text-white font-mono">
+                              Oct {chord.octave ?? 3}
+                            </span>
+                            <div className="text-[8px] text-neutral-500 font-mono">
+                              C{chord.octave ?? 3} = MIDI{" "}
+                              {48 + ((chord.octave ?? 3) - 3) * 12}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const newC = [...chords];
+                              newC[i] = {
+                                ...newC[i],
+                                octave: Math.min(6, (chord.octave ?? 3) + 1),
+                              };
+                              onChordsChange(newC);
+                              playChordPreview(newC[i]);
+                            }}
+                            className="w-7 h-7 rounded bg-neutral-700 hover:bg-indigo-600 text-white text-[14px] font-bold flex items-center justify-center leading-none transition-colors"
+                          >
+                            +
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Divider + Add New + Delete row */}
                       <div className="border-t border-neutral-700/60 pt-2 flex gap-2">
                         <button
@@ -1153,6 +1200,7 @@ const PianoRollBlock = ({
                               quality: "Major",
                               start: newStart,
                               duration: 4,
+                              octave: 3,
                             };
                             const newC = [...chords];
                             newC.splice(i + 1, 0, draft);
@@ -1224,7 +1272,13 @@ const PianoRollBlock = ({
               }
               onChordsChange([
                 ...chords,
-                { root: "C", quality: "Major", start: newStart, duration: 4 },
+                {
+                  root: "C",
+                  quality: "Major",
+                  start: newStart,
+                  duration: 4,
+                  octave: 3,
+                },
               ]);
               setOpenChordIdx(chords.length);
             }}
@@ -1381,9 +1435,8 @@ const PianoRollBlock = ({
           <span>Chord: Click=preview • Dbl-click=edit/add • ×=delete</span>
         </div>
         <span className="text-neutral-700 font-mono">
-          Chord Visual Transpose {transposeLabel(octaveOffset)} • MIDI Fixed
-          Pitch • {labelForRow(visiblePitchBottom)}–
-          {labelForRow(visiblePitchTop)}
+          Piano Roll {labelForRow(visiblePitchBottom)}–
+          {labelForRow(visiblePitchTop)} • Chord octave per block
         </span>
       </div>
     </div>
@@ -1858,9 +1911,6 @@ const DrumFillGen = () => {
 
         if (currentSeg && pianoRef.current) {
           const stepInBar = step % 16;
-          const octaveOffset =
-            (currentSeg.barOctaves && currentSeg.barOctaves[currentBarIdx]) ||
-            0;
 
           // 1. Play Chord
           if (currentSeg.barChords && currentSeg.barChords[currentBarIdx]) {
@@ -1900,7 +1950,9 @@ const DrumFillGen = () => {
                   (typeof chord?.root === "string" && chord.root.endsWith("m")
                     ? "Minor"
                     : "Major");
-                const root = rootToMidi[normalizedRoot] || 48;
+                // Apply per-chord octave (default oct 3 = C3 register)
+                const baseRoot = rootToMidi[normalizedRoot] || 48;
+                const root = baseRoot + ((chord.octave ?? 3) - 3) * 12;
                 const pitches = [root];
                 if (inferredQuality === "Minor")
                   pitches.push(root + 3, root + 7);
@@ -3615,11 +3667,6 @@ const DrumFillGen = () => {
                                         segment.barChords[barIndex]) ||
                                       []
                                     }
-                                    octaveOffset={
-                                      (segment.barOctaves &&
-                                        segment.barOctaves[barIndex]) ||
-                                      0
-                                    }
                                     onNotesChange={(newNotes) => {
                                       setSegments((prev) =>
                                         prev.map((s, i) => {
@@ -3648,24 +3695,6 @@ const DrumFillGen = () => {
                                             return {
                                               ...s,
                                               barChords: nextBarChords,
-                                            };
-                                          }
-                                          return s;
-                                        }),
-                                      );
-                                    }}
-                                    onOctaveChange={(newOctave) => {
-                                      setSegments((prev) =>
-                                        prev.map((s, i) => {
-                                          if (i === segIndex) {
-                                            const nextBarOctaves = {
-                                              ...(s.barOctaves || {}),
-                                            };
-                                            nextBarOctaves[barIndex] =
-                                              newOctave;
-                                            return {
-                                              ...s,
-                                              barOctaves: nextBarOctaves,
                                             };
                                           }
                                           return s;
@@ -3791,12 +3820,14 @@ const DrumFillGen = () => {
                                                     quality: "Major",
                                                     start: 0,
                                                     duration: 8,
+                                                    octave: 3,
                                                   },
                                                   {
                                                     root: "A",
                                                     quality: "Minor",
                                                     start: 8,
                                                     duration: 8,
+                                                    octave: 3,
                                                   },
                                                 ];
                                               }
