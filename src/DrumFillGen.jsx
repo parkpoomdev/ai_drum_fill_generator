@@ -687,7 +687,7 @@ const PianoRollBlock = ({
     const midiNote = BASE_MIDI + pitch;
     try {
       pianoInst.start({ note: midiNote, velocity: 90, duration: 0.8 });
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const handleNoteClick = (e, note) => {
@@ -772,7 +772,7 @@ const PianoRollBlock = ({
       pitches.forEach((p) =>
         pianoInst.start({ note: p, velocity: 70, duration: 1.2 }),
       );
-    } catch (_) {}
+    } catch (_) { }
   };
 
   const parseChordInput = (raw = "") => {
@@ -862,11 +862,10 @@ const PianoRollBlock = ({
               >
                 {/* Chord pill header with Edit + quality label */}
                 <div
-                  className={`w-full h-full border rounded shadow-sm transition-colors flex items-center justify-between gap-1 px-1 ${
-                    isEditing
-                      ? "bg-indigo-500/40 border-indigo-400"
-                      : "bg-indigo-500/20 border-indigo-500/50 hover:bg-indigo-500/30"
-                  }`}
+                  className={`w-full h-full border rounded shadow-sm transition-colors flex items-center justify-between gap-1 px-1 ${isEditing
+                    ? "bg-indigo-500/40 border-indigo-400"
+                    : "bg-indigo-500/20 border-indigo-500/50 hover:bg-indigo-500/30"
+                    }`}
                 >
                   <button
                     onClick={(e) => {
@@ -923,11 +922,10 @@ const PianoRollBlock = ({
                           onChordsChange(newC);
                           playChordPreview({ ...chord, root: r });
                         }}
-                        className={`text-[9px] py-1 rounded font-bold transition-colors ${
-                          chord.root === r
-                            ? "bg-indigo-500 text-white"
-                            : "bg-neutral-700/80 text-gray-300 hover:bg-indigo-600/50"
-                        }`}
+                        className={`text-[9px] py-1 rounded font-bold transition-colors ${chord.root === r
+                          ? "bg-indigo-500 text-white"
+                          : "bg-neutral-700/80 text-gray-300 hover:bg-indigo-600/50"
+                          }`}
                       >
                         {r}
                       </button>
@@ -943,11 +941,10 @@ const PianoRollBlock = ({
                           onChordsChange(newC);
                           playChordPreview({ ...chord, quality: q });
                         }}
-                        className={`text-[8px] py-1 rounded truncate px-1 font-semibold transition-colors ${
-                          chord.quality === q
-                            ? "bg-indigo-500 text-white"
-                            : "bg-neutral-700/80 text-gray-300 hover:bg-indigo-600/50"
-                        }`}
+                        className={`text-[8px] py-1 rounded truncate px-1 font-semibold transition-colors ${chord.quality === q
+                          ? "bg-indigo-500 text-white"
+                          : "bg-neutral-700/80 text-gray-300 hover:bg-indigo-600/50"
+                          }`}
                       >
                         {q}
                       </button>
@@ -1302,11 +1299,10 @@ const PianoRollBlock = ({
           {rows.map((r) => (
             <div
               key={r}
-              className={`flex items-center justify-center text-[8px] font-mono border-b border-neutral-800/70 ${
-                NOTE_NAMES[midiForRow(r) % 12] === "C"
-                  ? "text-indigo-300 font-bold bg-indigo-500/10"
-                  : "text-neutral-500"
-              }`}
+              className={`flex items-center justify-center text-[8px] font-mono border-b border-neutral-800/70 ${NOTE_NAMES[midiForRow(r) % 12] === "C"
+                ? "text-indigo-300 font-bold bg-indigo-500/10"
+                : "text-neutral-500"
+                }`}
               style={{ height: ROW_HEIGHT }}
             >
               {labelForRow(r)}
@@ -1323,11 +1319,10 @@ const PianoRollBlock = ({
             {rows.map((r) => (
               <div
                 key={r}
-                className={`absolute left-0 right-0 border-b ${
-                  NOTE_NAMES[midiForRow(r) % 12] === "C"
-                    ? "border-indigo-500/25"
-                    : "border-white/[0.03]"
-                }`}
+                className={`absolute left-0 right-0 border-b ${NOTE_NAMES[midiForRow(r) % 12] === "C"
+                  ? "border-indigo-500/25"
+                  : "border-white/[0.03]"
+                  }`}
                 style={{
                   top: (ROW_COUNT - 1 - r) * ROW_HEIGHT,
                   height: ROW_HEIGHT,
@@ -1343,9 +1338,8 @@ const PianoRollBlock = ({
               .map((_, i) => (
                 <div
                   key={i}
-                  className={`flex-1 border-r ${
-                    i % 4 === 3 ? "border-white/15" : "border-white/[0.03]"
-                  }`}
+                  className={`flex-1 border-r ${i % 4 === 3 ? "border-white/15" : "border-white/[0.03]"
+                    }`}
                 />
               ))}
           </div>
@@ -1375,11 +1369,10 @@ const PianoRollBlock = ({
             return (
               <div
                 key={note.id}
-                className={`absolute border rounded-[2px] cursor-grab active:cursor-grabbing flex items-center shadow-sm transition-colors group/note ${
-                  isSelected
-                    ? "border-emerald-300 bg-emerald-400/40 ring-1 ring-emerald-300/50"
-                    : "border-emerald-500 bg-emerald-500/20 hover:bg-emerald-500/40"
-                }`}
+                className={`absolute border rounded-[2px] cursor-grab active:cursor-grabbing flex items-center shadow-sm transition-colors group/note ${isSelected
+                  ? "border-emerald-300 bg-emerald-400/40 ring-1 ring-emerald-300/50"
+                  : "border-emerald-500 bg-emerald-500/20 hover:bg-emerald-500/40"
+                  }`}
                 style={{
                   left: `${left}%`,
                   width: `${width}%`,
@@ -1483,9 +1476,9 @@ const DrumFillGen = () => {
   // ── Manual Pattern ──
   const [manualPattern, setManualPattern] = useState(
     savedState?.manualPattern ??
-      Array(16)
-        .fill(null)
-        .map(() => ({ kick: 0, snare: 0 })),
+    Array(16)
+      .fill(null)
+      .map(() => ({ kick: 0, snare: 0 })),
   );
 
   const defaultLib = [
@@ -1519,7 +1512,7 @@ const DrumFillGen = () => {
 
   const [pattern, setPattern] = useState(
     savedState?.pattern ??
-      (() => generatePattern("acoustic", 60, 70, 25, "groove")),
+    (() => generatePattern("acoustic", 60, 70, 25, "groove")),
   );
 
   // ── Library ──
@@ -1582,16 +1575,16 @@ const DrumFillGen = () => {
           ...(item
             ? item.pattern
             : Array(16)
-                .fill(null)
-                .map(() => ({}))),
+              .fill(null)
+              .map(() => ({}))),
         );
       }),
     );
     return flat.length > 0
       ? flat
       : Array(16)
-          .fill(null)
-          .map(() => ({}));
+        .fill(null)
+        .map(() => ({}));
   }, [appMode, pattern, segments, library]);
 
   const maxSteps = useMemo(() => activePattern.length || 16, [activePattern]);
@@ -2131,17 +2124,17 @@ const DrumFillGen = () => {
         prev.map((l) =>
           l.id === editingLibId
             ? {
-                ...l,
-                pattern: pattern.map((s) => ({ ...s })),
-                params: {
-                  genre,
-                  complexity,
-                  intensity,
-                  fillAmount: effectiveFill,
-                  generatorMode,
-                },
-                manualPattern: manualPattern.map((s) => ({ ...s })),
-              }
+              ...l,
+              pattern: pattern.map((s) => ({ ...s })),
+              params: {
+                genre,
+                complexity,
+                intensity,
+                fillAmount: effectiveFill,
+                generatorMode,
+              },
+              manualPattern: manualPattern.map((s) => ({ ...s })),
+            }
             : l,
         ),
       );
@@ -2207,11 +2200,11 @@ const DrumFillGen = () => {
           si !== targetSegIndex
             ? seg
             : {
-                ...seg,
-                bars: seg.bars.map((b, bi) =>
-                  bi === targetBarIndex ? libId : b,
-                ),
-              },
+              ...seg,
+              bars: seg.bars.map((b, bi) =>
+                bi === targetBarIndex ? libId : b,
+              ),
+            },
         ),
       );
       return;
@@ -2256,12 +2249,12 @@ const DrumFillGen = () => {
         si !== segIndex
           ? seg
           : {
-              ...seg,
-              bars:
-                seg.bars[barIndex] === null
-                  ? seg.bars.filter((_, bi) => bi !== barIndex)
-                  : seg.bars.map((b, bi) => (bi === barIndex ? null : b)),
-            },
+            ...seg,
+            bars:
+              seg.bars[barIndex] === null
+                ? seg.bars.filter((_, bi) => bi !== barIndex)
+                : seg.bars.map((b, bi) => (bi === barIndex ? null : b)),
+          },
       ),
     );
   };
@@ -2795,7 +2788,7 @@ const DrumFillGen = () => {
                                 // Because state updates are async, the easiest way is to direct duplicate save logic for 'Save As New'
                                 const effectiveFill =
                                   generatorMode === "groove" ||
-                                  generatorMode === "manual"
+                                    generatorMode === "manual"
                                     ? 0
                                     : fillAmount;
                                 const typeLabel =
@@ -2922,9 +2915,9 @@ const DrumFillGen = () => {
                                   backgroundColor: isCurrent
                                     ? "#2a2a2a"
                                     : generatorMode === "fill" &&
-                                        si >=
-                                          16 -
-                                            Math.floor((fillAmount / 100) * 16)
+                                      si >=
+                                      16 -
+                                      Math.floor((fillAmount / 100) * 16)
                                       ? "#1e1515"
                                       : "#111",
                                 }}
@@ -2995,11 +2988,10 @@ const DrumFillGen = () => {
                   </button>
                   <button
                     onClick={() => setIsGrooveLooping((v) => !v)}
-                    className={`h-12 px-4 rounded-full border text-sm font-bold transition-all flex items-center gap-2 ${
-                      isGrooveLooping
-                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                        : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white"
-                    }`}
+                    className={`h-12 px-4 rounded-full border text-sm font-bold transition-all flex items-center gap-2 ${isGrooveLooping
+                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                      : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white"
+                      }`}
                     title={
                       isGrooveLooping
                         ? "Loop groove is ON"
@@ -3075,42 +3067,10 @@ const DrumFillGen = () => {
                               ),
                             )
                           }
-                          className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-1 border-none outline-none text-gray-200"
+                          className="bg-transparent text-center text-sm font-bold flex-1 min-w-0 py-2 px-1 border-none outline-none text-gray-200"
                         />
 
-                        {/* Playback Mode Toggle */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            const currentMode = segment.playbackMode || "next";
-                            const nextMode =
-                              currentMode === "loop"
-                                ? "stop"
-                                : currentMode === "stop"
-                                  ? "next"
-                                  : "loop";
-                            setSegments((prev) =>
-                              prev.map((s, i) =>
-                                i !== segIndex
-                                  ? s
-                                  : { ...s, playbackMode: nextMode },
-                              ),
-                            );
-                          }}
-                          className={`px-2 py-1 rounded transition-all flex items-center gap-1.5 border ${segment.playbackMode === "loop" ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20" : segment.playbackMode === "stop" ? "bg-rose-500/10 border-rose-500/30 text-rose-400 hover:bg-rose-500/20" : "bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20"}`}
-                          title={`Mode: ${segment.playbackMode === "loop" ? "Loop Segment" : segment.playbackMode === "stop" ? "Stop After Play" : "Next Segment"}`}
-                        >
-                          {segment.playbackMode === "loop" ? (
-                            <Repeat size={12} className="animate-spin-slow" />
-                          ) : segment.playbackMode === "stop" ? (
-                            <StopCircle size={12} />
-                          ) : (
-                            <ArrowRight size={12} />
-                          )}
-                          <span className="text-[8px] font-bold uppercase tracking-tighter">
-                            {segment.playbackMode || "next"}
-                          </span>
-                        </button>
+
 
                         {/* ⋮ Kebab menu */}
                         <div className="relative shrink-0 pr-1">
@@ -3270,10 +3230,10 @@ const DrumFillGen = () => {
                         },
                       ])
                     }
-                    className="w-12 h-10 bg-neutral-800 hover:bg-indigo-600 border border-neutral-700 rounded-lg text-white font-bold flex items-center justify-center transition-all overflow-hidden group shrink-0 hover:w-32"
+                    className="h-10 px-4 bg-neutral-800 hover:bg-indigo-600 border border-neutral-700 rounded-lg text-white font-bold flex items-center justify-center transition-all group shrink-0"
                   >
-                    <Plus size={16} className="shrink-0" />
-                    <span className="text-xs ml-1.5 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto transition-all duration-300">
+                    <Plus size={16} className="shrink-0 mr-1.5" />
+                    <span className="text-xs whitespace-nowrap">
                       Add Part
                     </span>
                   </button>
@@ -3393,23 +3353,25 @@ const DrumFillGen = () => {
                           // Per-bar playback mode: 'loop' | 'next' | 'stop'
                           const barPlayMode =
                             segment.barPlayModes &&
-                            segment.barPlayModes[barIndex]
+                              segment.barPlayModes[barIndex]
                               ? segment.barPlayModes[barIndex]
                               : "next";
                           const setBarPlayMode = (mode) => {
                             setSegments((prev) =>
                               prev.map((s, i) => {
-                                if (i === segIndex) {
-                                  const nextBarPlayModes = {
-                                    ...(s.barPlayModes || {}),
-                                  };
-                                  nextBarPlayModes[barIndex] = mode;
-                                  return {
-                                    ...s,
-                                    barPlayModes: nextBarPlayModes,
-                                  };
+                                const nextBarPlayModes = { ...(s.barPlayModes || {}) };
+                                if (mode === "loop") {
+                                  Object.keys(nextBarPlayModes).forEach((k) => {
+                                    if (nextBarPlayModes[k] === "loop") nextBarPlayModes[k] = "next";
+                                  });
                                 }
-                                return s;
+                                if (i === segIndex) {
+                                  nextBarPlayModes[barIndex] = mode;
+                                }
+                                return {
+                                  ...s,
+                                  barPlayModes: nextBarPlayModes,
+                                };
                               }),
                             );
                           };
@@ -3467,11 +3429,10 @@ const DrumFillGen = () => {
                                         seekToBar(globalBarIdx);
                                       }
                                     }}
-                                    className={`w-6 h-6 rounded flex items-center justify-center border text-[9px] transition-all ${
-                                      isBarCurrent && isPlaying
-                                        ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
-                                        : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/30"
-                                    }`}
+                                    className={`w-6 h-6 rounded flex items-center justify-center border text-[9px] transition-all ${isBarCurrent && isPlaying
+                                      ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
+                                      : "bg-emerald-500/10 border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/30"
+                                      }`}
                                     title={
                                       isBarCurrent && isPlaying
                                         ? "Pause"
@@ -3547,11 +3508,10 @@ const DrumFillGen = () => {
                                           : "loop",
                                       );
                                     }}
-                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[8px] font-bold uppercase tracking-widest transition-all ${
-                                      barPlayMode === "loop"
-                                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                                        : "bg-neutral-800 border-neutral-700 text-neutral-500 hover:text-neutral-300"
-                                    }`}
+                                    className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded border text-[8px] font-bold uppercase tracking-widest transition-all ${barPlayMode === "loop"
+                                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                                      : "bg-neutral-800 border-neutral-700 text-neutral-500 hover:text-neutral-300"
+                                      }`}
                                     title={
                                       barPlayMode === "loop"
                                         ? "🔁 Looping this groove only — click to disable"
@@ -3587,27 +3547,27 @@ const DrumFillGen = () => {
                                         segment.barChords[barIndex]) ||
                                       []
                                     ).length > 0 && (
-                                      <div className="flex flex-wrap gap-1 items-center">
-                                        <span className="text-[7px] text-neutral-600 uppercase tracking-widest font-bold mr-0.5">
-                                          chords
-                                        </span>
-                                        {(
-                                          (segment.barChords &&
-                                            segment.barChords[barIndex]) ||
-                                          []
-                                        ).map((chord, ci) => (
-                                          <span
-                                            key={ci}
-                                            className="text-[8px] px-1.5 py-0.5 bg-indigo-500/15 border border-indigo-500/30 rounded text-indigo-300 font-bold"
-                                          >
-                                            {chord.root}
-                                            {chord.quality === "Major"
-                                              ? ""
-                                              : chord.quality}
+                                        <div className="flex flex-wrap gap-1 items-center">
+                                          <span className="text-[7px] text-neutral-600 uppercase tracking-widest font-bold mr-0.5">
+                                            chords
                                           </span>
-                                        ))}
-                                      </div>
-                                    )}
+                                          {(
+                                            (segment.barChords &&
+                                              segment.barChords[barIndex]) ||
+                                            []
+                                          ).map((chord, ci) => (
+                                            <span
+                                              key={ci}
+                                              className="text-[8px] px-1.5 py-0.5 bg-indigo-500/15 border border-indigo-500/30 rounded text-indigo-300 font-bold"
+                                            >
+                                              {chord.root}
+                                              {chord.quality === "Major"
+                                                ? ""
+                                                : chord.quality}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      )}
                                     {words.length > 0 && (
                                       <div className="flex flex-wrap gap-1 items-center">
                                         <span className="text-[7px] text-neutral-600 uppercase tracking-widest font-bold mr-0.5">
@@ -3635,16 +3595,16 @@ const DrumFillGen = () => {
                                           segment.barChords[barIndex]) ||
                                         []
                                       ).length > 0) && (
-                                      <button
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          setIsLyricsExpanded(true);
-                                        }}
-                                        className="text-left text-[8px] text-neutral-600 hover:text-indigo-400 font-mono transition-colors leading-none mt-0.5"
-                                      >
-                                        🎹 Open piano roll to edit…
-                                      </button>
-                                    )}
+                                        <button
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setIsLyricsExpanded(true);
+                                          }}
+                                          className="text-left text-[8px] text-neutral-600 hover:text-indigo-400 font-mono transition-colors leading-none mt-0.5"
+                                        >
+                                          🎹 Open piano roll to edit…
+                                        </button>
+                                      )}
                                   </>
                                 )}
 
@@ -3654,12 +3614,12 @@ const DrumFillGen = () => {
                                     notes={words.map((w, i) =>
                                       typeof w === "string"
                                         ? {
-                                            id: `legacy-${i}`,
-                                            text: w,
-                                            pitch: 14,
-                                            start: Math.min(15, i * 2),
-                                            duration: 2,
-                                          }
+                                          id: `legacy-${i}`,
+                                          text: w,
+                                          pitch: 14,
+                                          start: Math.min(15, i * 2),
+                                          duration: 2,
+                                        }
                                         : w,
                                     )}
                                     chords={
@@ -3788,17 +3748,17 @@ const DrumFillGen = () => {
                                                 nextBarLyrics[barIndex],
                                               )
                                                 ? nextBarLyrics[barIndex].map(
-                                                    (w, idx) =>
-                                                      typeof w === "string"
-                                                        ? {
-                                                            id: `legacy-${Date.now()}-${idx}`,
-                                                            text: w,
-                                                            pitch: 4,
-                                                            start: idx * 2,
-                                                            duration: 2,
-                                                          }
-                                                        : w,
-                                                  )
+                                                  (w, idx) =>
+                                                    typeof w === "string"
+                                                      ? {
+                                                        id: `legacy-${Date.now()}-${idx}`,
+                                                        text: w,
+                                                        pitch: 4,
+                                                        start: idx * 2,
+                                                        duration: 2,
+                                                      }
+                                                      : w,
+                                                )
                                                 : [];
                                               nextBarLyrics[barIndex] = [
                                                 ...existing,
