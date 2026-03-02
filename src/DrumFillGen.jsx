@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Play, Square, RefreshCw, Sliders, Activity, Download, Plus, LayoutGrid, Layers, Archive, Trash2, Grid, Save, X, Drumstick, Music2, AlertTriangle } from 'lucide-react';
+import { Play, Square, RefreshCw, Sliders, Activity, Download, Plus, LayoutGrid, Layers, Archive, Trash2, Grid, Save, X, Drumstick, Music2, AlertTriangle, Maximize2, Minimize2, Sun, Moon, Volume2, VolumeX } from 'lucide-react';
 
 // ─────────────────────────────────────────────
 // AUDIO ENGINE
@@ -93,6 +93,13 @@ const playSound = (ctx, type, time, velocity = 1, genre = 'acoustic') => {
         ng.gain.setValueAtTime(vol * 0.6, time); ng.gain.exponentialRampToValueAtTime(0.01, time + 1.5);
         noise.connect(f); f.connect(ng); ng.connect(ctx.destination); noise.start(time);
         return;
+    } else if (type === 'metronome' || type === 'metronome_high') {
+        osc.type = 'sine';
+        const freq = type === 'metronome_high' ? 1200 : 800;
+        osc.frequency.setValueAtTime(freq, time);
+        osc.frequency.exponentialRampToValueAtTime(10, time + 0.05);
+        gain.gain.setValueAtTime(vol * 0.4, time);
+        gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
     }
     osc.connect(gain); gain.connect(ctx.destination);
     osc.start(time); osc.stop(time + 0.5);
@@ -404,6 +411,9 @@ const DrumFillGen = () => {
     const [renameValue, setRenameValue] = useState("");
     const [openSegMenu, setOpenSegMenu] = useState(null); // segIndex of open kebab menu
     const [editingLibId, setEditingLibId] = useState(null); // id of lib item currently loaded in generator
+    const [isLyricsExpanded, setIsLyricsExpanded] = useState(false); // is lyrics panel expanded
+    const [isDayTheme, setIsDayTheme] = useState(savedState?.isDayTheme ?? false); // day theme toggle
+    const [isMetronomeEnabled, setIsMetronomeEnabled] = useState(savedState?.isMetronomeEnabled ?? false); // metronome toggle
 
     // ── Refs ──
     const audioCtxRef = useRef(null);
@@ -436,10 +446,10 @@ const DrumFillGen = () => {
     useEffect(() => {
         const stateToSave = {
             generatorMode, bpm, genre, complexity, intensity, fillAmount,
-            manualPattern, pattern, library, segments
+            manualPattern, pattern, library, segments, isDayTheme, isMetronomeEnabled
         };
         localStorage.setItem("drumFillGen_saveState", JSON.stringify(stateToSave));
-    }, [generatorMode, bpm, genre, complexity, intensity, fillAmount, manualPattern, pattern, library, segments]);
+    }, [generatorMode, bpm, genre, complexity, intensity, fillAmount, manualPattern, pattern, library, segments, isDayTheme, isMetronomeEnabled]);
 
     // ── Regen when params change ──
     useEffect(() => {
@@ -566,7 +576,13 @@ const DrumFillGen = () => {
         if (s.tomMid > 0) playSound(ctx, "tomMid", time, s.tomMid, genre);
         if (s.tomLow > 0) playSound(ctx, "tomLow", time, s.tomLow, genre);
         if (s.crash > 0) playSound(ctx, "crash", time, s.crash, genre);
-    }, [activePattern, genre]);
+
+        // Metronome logic
+        if (isMetronomeEnabled && step % 4 === 0) {
+            const isHigh = step % 16 === 0;
+            playSound(ctx, isHigh ? "metronome_high" : "metronome", time, 1, genre);
+        }
+    }, [activePattern, genre, isMetronomeEnabled]);
 
     const scheduler = useCallback(() => {
         while (nextNoteTimeRef.current < audioCtxRef.current.currentTime + 0.1) {
@@ -830,7 +846,7 @@ const DrumFillGen = () => {
     // RENDER
     // ─────────────────────────────────────────
     return (
-        <div className="min-h-screen bg-neutral-900 text-gray-200 font-sans flex flex-col">
+        <div className={`min-h-screen bg-neutral-900 text-gray-200 font-sans flex flex-col ${isDayTheme ? 'day-theme' : ''}`}>
 
             {/* CONFIRM MODAL */}
             {confirmModal && (
@@ -856,6 +872,16 @@ const DrumFillGen = () => {
                 </div>
 
                 <div className="flex items-center gap-3">
+                    <button onClick={() => setIsMetronomeEnabled(!isMetronomeEnabled)}
+                        className={`p-1.5 rounded-lg border flex items-center justify-center transition-colors ${isMetronomeEnabled ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-500' : 'bg-neutral-800 border-neutral-700 text-gray-500'}`}
+                        title={isMetronomeEnabled ? "Turn Metronome OFF" : "Turn Metronome ON"}>
+                        {isMetronomeEnabled ? <Volume2 size={18} /> : <VolumeX size={18} />}
+                    </button>
+                    <button onClick={() => setIsDayTheme(!isDayTheme)}
+                        className={`p-1.5 rounded-lg border flex items-center justify-center transition-colors ${isDayTheme ? 'bg-amber-500/20 border-amber-500/50 text-amber-500' : 'bg-indigo-500/20 border-indigo-500/50 text-indigo-400'}`}
+                        title={isDayTheme ? "Switch to Dark Mode" : "Switch to Day Theme"}>
+                        {isDayTheme ? <Sun size={18} /> : <Moon size={18} />}
+                    </button>
                     <div className="flex items-center gap-2 bg-neutral-800 px-3 py-1.5 rounded-lg border border-neutral-700">
                         <span className="text-[10px] text-gray-400 font-bold uppercase">BPM</span>
                         <input type="number" value={bpm} onChange={(e) => setBpm(Number(e.target.value))}
@@ -879,6 +905,8 @@ const DrumFillGen = () => {
                                     if (parsed.pattern) setPattern(parsed.pattern);
                                     if (parsed.library) setLibrary(parsed.library);
                                     if (parsed.segments) setSegments(parsed.segments);
+                                    if (parsed.isDayTheme !== undefined) setIsDayTheme(parsed.isDayTheme);
+                                    if (parsed.isMetronomeEnabled !== undefined) setIsMetronomeEnabled(parsed.isMetronomeEnabled);
                                 }
                             } catch (error) {
                                 alert("Invalid project file.");
@@ -893,7 +921,7 @@ const DrumFillGen = () => {
                         <Archive size={14} /> LOAD
                     </button>
                     <button onClick={() => {
-                        const stateToSave = { generatorMode, bpm, genre, complexity, intensity, fillAmount, manualPattern, pattern, library, segments };
+                        const stateToSave = { generatorMode, bpm, genre, complexity, intensity, fillAmount, manualPattern, pattern, library, segments, isDayTheme, isMetronomeEnabled };
                         const blob = new Blob([JSON.stringify(stateToSave, null, 2)], { type: "application/json" });
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");
@@ -1279,13 +1307,32 @@ const DrumFillGen = () => {
                         </div>
 
                         {/* RIGHT: LYRIC PANEL */}
-                        <div className="w-80 bg-neutral-900 border-l border-neutral-800 flex flex-col shrink-0 overflow-hidden shadow-2xl relative z-10">
-                            <div className="bg-neutral-950 border-b border-neutral-800 px-5 flex items-center shrink-0 h-[45px]">
+                        {isLyricsExpanded && <div className="fixed inset-0 bg-black/60 z-40 backdrop-blur-sm" onClick={() => setIsLyricsExpanded(false)} />}
+                        <div className={`flex flex-col shrink-0 overflow-hidden bg-neutral-900 shadow-2xl ${isLyricsExpanded ? "fixed inset-8 md:inset-x-32 md:inset-y-16 z-50 border border-neutral-700 rounded-2xl" : "w-80 border-l border-neutral-800 relative z-10"}`}>
+                            <div className="bg-neutral-950 border-b border-neutral-800 px-5 flex items-center justify-between shrink-0 h-[45px]">
                                 <span className="text-xs text-slate-300 font-bold uppercase tracking-widest flex items-center gap-2">
                                     <span className="text-lg">📝</span> Lyrics & Notes
                                 </span>
+                                <button onClick={() => setIsLyricsExpanded(!isLyricsExpanded)} className="text-gray-400 hover:text-white transition-colors" title={isLyricsExpanded ? "Collapse" : "Expand"}>
+                                    {isLyricsExpanded ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                                </button>
                             </div>
-                            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                            {isLyricsExpanded && (
+                                <div className="bg-neutral-950 border-b border-neutral-800 p-3 flex gap-2 overflow-x-auto shrink-0 z-20">
+                                    {segments.map((seg, idx) => {
+                                        let pBars = 0;
+                                        for (let i = 0; i < idx; i++) pBars += segments[i].bars.length;
+                                        return (
+                                            <button key={seg.id}
+                                                onClick={() => seekToBar(pBars)}
+                                                className="px-3 py-1 bg-neutral-800 hover:bg-emerald-600/80 hover:text-white border border-neutral-700 rounded-md text-xs font-bold text-gray-300 transition-all whitespace-nowrap">
+                                                [{seg.name}]
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                            <div className={`flex-1 overflow-y-auto space-y-4 custom-scrollbar ${isLyricsExpanded ? "p-8 md:p-12" : "p-4"}`}>
                                 {segments.map((segment, segIndex) => {
                                     let precedingBars = 0;
                                     for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
@@ -1296,9 +1343,10 @@ const DrumFillGen = () => {
                                     return (
                                         <div key={segment.id} className={`bg-neutral-850 rounded-xl overflow-hidden flex flex-col shadow-lg transition-all border ${isSegCurrent ? 'border-indigo-500/50 shadow-indigo-500/10' : 'border-neutral-700'}`}>
                                             {/* Card Header */}
-                                            <div className="px-4 py-2.5 bg-neutral-900 border-b border-neutral-800 flex justify-between items-center z-10">
+                                            <div className="px-4 py-2.5 bg-neutral-900 border-b border-neutral-800 flex justify-between items-center z-10 cursor-pointer hover:bg-neutral-800 transition-colors group"
+                                                onClick={() => seekToBar(precedingBars)}>
                                                 <span className="text-sm font-bold text-gray-200">{segment.name}</span>
-                                                {isSegCurrent && <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest animate-pulse">Running</span>}
+                                                {isSegCurrent ? <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest animate-pulse">Running</span> : <span className="text-[9px] text-neutral-500 opacity-0 group-hover:opacity-100 transition-opacity">Click to Play</span>}
                                             </div>
 
                                             {/* Card Body - Bars/Grooves */}
@@ -1315,7 +1363,13 @@ const DrumFillGen = () => {
                                                     const words = (segment.barLyrics && segment.barLyrics[barIndex]) || [];
 
                                                     return (
-                                                        <div key={barIndex} className={`p-3 relative border-b border-neutral-700/50 last:border-b-0 transition-colors ${isBarCurrent ? (item ? 'bg-emerald-900/10' : 'bg-neutral-800/60') : ''}`}>
+                                                        <div key={barIndex}
+                                                            onClick={(e) => {
+                                                                if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'SPAN') {
+                                                                    seekToBar(globalBarIdx);
+                                                                }
+                                                            }}
+                                                            className={`p-3 relative border-b border-neutral-700/50 last:border-b-0 transition-colors cursor-pointer hover:bg-neutral-800/40 ${isBarCurrent ? (item ? 'bg-emerald-900/10' : 'bg-neutral-800/60') : ''}`}>
                                                             {item ? (
                                                                 <div className="flex items-center justify-between mb-2">
                                                                     <div className="flex items-center gap-1.5 min-w-0">
@@ -1356,6 +1410,7 @@ const DrumFillGen = () => {
                                                                 )}
 
                                                                 <input type="text"
+                                                                    onClick={(e) => e.stopPropagation()}
                                                                     placeholder={item ? `📝 Type lyrics for ${item.type}...` : `📝 Type lyrics for empty bar...`}
                                                                     className="w-full bg-neutral-900/60 border border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-white focus:outline-none focus:border-indigo-500 focus:bg-neutral-900 transition-colors placeholder-neutral-500 shadow-inner"
                                                                     onKeyDown={(e) => {
@@ -1417,6 +1472,14 @@ const DrumFillGen = () => {
                 .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
                 .custom-scrollbar::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
                 .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #555; }
+                
+                .day-theme {
+                    filter: invert(1) hue-rotate(180deg);
+                }
+                .day-theme img,
+                .day-theme video {
+                    filter: invert(1) hue-rotate(180deg);
+                }
             `}</style>
         </div>
     );

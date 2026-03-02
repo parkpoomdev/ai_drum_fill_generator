@@ -1,0 +1,1037 @@
+{
+  "generatorMode": "manual",
+  "bpm": 117,
+  "genre": "acoustic",
+  "complexity": 60,
+  "intensity": 70,
+  "fillAmount": 0,
+  "manualPattern": [
+    {
+      "kick": 1,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 1,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 1
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    },
+    {
+      "kick": 1,
+      "snare": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0
+    }
+  ],
+  "pattern": [
+    {
+      "kick": 1,
+      "snare": 0,
+      "hihat": 0.5866150839711337,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.3391572585269703,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 1,
+      "snare": 0,
+      "hihat": 0.5699190671159289,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.5618274105475758,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.6803591783528757,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.3995355958277966,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 1,
+      "hihat": 0.6973560663098751,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.5826248722364339,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.6636315094191202,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.3380100842824477,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 1,
+      "snare": 0,
+      "hihat": 0.6293534256551346,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    },
+    {
+      "kick": 0,
+      "snare": 0,
+      "hihat": 0.3126838458319294,
+      "tomHigh": 0,
+      "tomMid": 0,
+      "tomLow": 0,
+      "crash": 0
+    }
+  ],
+  "library": [
+    {
+      "id": "lib-1",
+      "name": "Default Groove",
+      "type": "groove",
+      "pattern": [
+        {
+          "kick": 0.7,
+          "snare": 0,
+          "hihat": 0.6060875803695559,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.48824812473081997,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.5736286664945784,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.4265002196752019,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.5800066688445316,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0.48999999999999994,
+          "snare": 0.13999999999999999,
+          "hihat": 0.6607414680052525,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.4563441151226575,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0.7,
+          "hihat": 0.6713974073636846,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0.13999999999999999,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6830001226285942,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0.13999999999999999,
+          "hihat": 0.387413481516709,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6768753895473328,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.42258450857047103,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6307445453077087,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        }
+      ],
+      "params": {
+        "genre": "acoustic",
+        "complexity": 60,
+        "intensity": 70,
+        "fillAmount": 0,
+        "generatorMode": "groove"
+      }
+    },
+    {
+      "id": "lib-2",
+      "name": "Default Fill",
+      "type": "fill",
+      "pattern": [
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.7656124406927969,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6683897314346133,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 1,
+          "hihat": 0.7624085295755476,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6404165807516337,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0.7,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0.7,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0.7,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0.7,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0.7,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0.7,
+          "crash": 0
+        }
+      ],
+      "params": {
+        "genre": "acoustic",
+        "complexity": 60,
+        "intensity": 70,
+        "fillAmount": 50,
+        "generatorMode": "fill"
+      }
+    },
+    {
+      "id": "lib-1772444864400",
+      "name": "Acoustic Manual",
+      "type": "manual",
+      "pattern": [
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.5866150839711337,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.3391572585269703,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.5699190671159289,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.5618274105475758,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6803591783528757,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.3995355958277966,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 1,
+          "hihat": 0.6973560663098751,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.5826248722364339,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6636315094191202,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.3380100842824477,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.6293534256551346,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.3126838458319294,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        }
+      ],
+      "params": {
+        "genre": "acoustic",
+        "complexity": 60,
+        "intensity": 70,
+        "fillAmount": 0,
+        "generatorMode": "manual"
+      },
+      "manualPattern": [
+        {
+          "kick": 1,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 1
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        }
+      ]
+    },
+    {
+      "id": "lib-1772444881724",
+      "name": "Acoustic Manual",
+      "type": "manual",
+      "pattern": [
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.6799928357634966,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.5859859758699694,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0,
+          "hihat": 0.6221925927347463,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.5603834206119819,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.46943124133519437,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6226109094440987,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 1,
+          "hihat": 0.5533628174192675,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6318634980819547,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.329257772937035,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.6495412496551578,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0,
+          "hihat": 0.3700871544833549,
+          "tomHigh": 0,
+          "tomMid": 0,
+          "tomLow": 0,
+          "crash": 0
+        }
+      ],
+      "params": {
+        "genre": "acoustic",
+        "complexity": 60,
+        "intensity": 70,
+        "fillAmount": 0,
+        "generatorMode": "manual"
+      },
+      "manualPattern": [
+        {
+          "kick": 1,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 1,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 1
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        },
+        {
+          "kick": 0,
+          "snare": 0
+        }
+      ]
+    }
+  ],
+  "segments": [
+    {
+      "id": "seg-1",
+      "name": "Intro",
+      "bars": [
+        "lib-1772444864400",
+        "lib-1772444864400",
+        "lib-1772444864400",
+        "lib-2"
+      ],
+      "barLyrics": {
+        "2": [
+          "hey",
+          "jude",
+          "don't",
+          "make",
+          "it",
+          "bad"
+        ],
+        "3": [
+          "I",
+          "love",
+          "you",
+          "so",
+          "much"
+        ]
+      }
+    },
+    {
+      "id": "seg-2",
+      "name": "Verse",
+      "bars": [
+        "lib-1",
+        "lib-1",
+        "lib-1",
+        "lib-2"
+      ]
+    },
+    {
+      "id": "seg-1772444736287",
+      "name": "Part 3",
+      "bars": [
+        null,
+        null,
+        "lib-2",
+        "lib-2"
+      ]
+    }
+  ],
+  "isDayTheme": true,
+  "isMetronomeEnabled": true
+}
