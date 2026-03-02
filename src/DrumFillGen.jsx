@@ -3527,14 +3527,84 @@ const DrumFillGen = () => {
                               </div>
 
                               <div className="flex flex-col gap-2 relative z-10 mt-1">
-                                {words.length > 0 && (
+                                {/* ── COLLAPSED: word & chord chips — overview only, no piano roll ── */}
+                                {!isLyricsExpanded && (
+                                  <>
+                                    {(
+                                      (segment.barChords &&
+                                        segment.barChords[barIndex]) ||
+                                      []
+                                    ).length > 0 && (
+                                      <div className="flex flex-wrap gap-1 items-center">
+                                        <span className="text-[7px] text-neutral-600 uppercase tracking-widest font-bold mr-0.5">
+                                          chords
+                                        </span>
+                                        {(
+                                          (segment.barChords &&
+                                            segment.barChords[barIndex]) ||
+                                          []
+                                        ).map((chord, ci) => (
+                                          <span
+                                            key={ci}
+                                            className="text-[8px] px-1.5 py-0.5 bg-indigo-500/15 border border-indigo-500/30 rounded text-indigo-300 font-bold"
+                                          >
+                                            {chord.root}
+                                            {chord.quality === "Major"
+                                              ? ""
+                                              : chord.quality}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    )}
+                                    {words.length > 0 && (
+                                      <div className="flex flex-wrap gap-1 items-center">
+                                        <span className="text-[7px] text-neutral-600 uppercase tracking-widest font-bold mr-0.5">
+                                          lyrics
+                                        </span>
+                                        {words.map((w, wi) => {
+                                          const note =
+                                            typeof w === "string"
+                                              ? { text: w }
+                                              : w;
+                                          return (
+                                            <span
+                                              key={wi}
+                                              className="text-[9px] px-1.5 py-0.5 bg-emerald-500/15 border border-emerald-500/30 rounded text-emerald-300 font-mono"
+                                            >
+                                              {note.text}
+                                            </span>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                    {(words.length > 0 ||
+                                      (
+                                        (segment.barChords &&
+                                          segment.barChords[barIndex]) ||
+                                        []
+                                      ).length > 0) && (
+                                      <button
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setIsLyricsExpanded(true);
+                                        }}
+                                        className="text-left text-[8px] text-neutral-600 hover:text-indigo-400 font-mono transition-colors leading-none mt-0.5"
+                                      >
+                                        🎹 Open piano roll to edit…
+                                      </button>
+                                    )}
+                                  </>
+                                )}
+
+                                {/* ── EXPANDED: full piano roll editor (only in popup) ── */}
+                                {isLyricsExpanded && words.length > 0 && (
                                   <PianoRollBlock
                                     notes={words.map((w, i) =>
                                       typeof w === "string"
                                         ? {
                                             id: `legacy-${i}`,
                                             text: w,
-                                            pitch: 14, // D4 — comfortable mid-melody default
+                                            pitch: 14,
                                             start: Math.min(15, i * 2),
                                             duration: 2,
                                           }
