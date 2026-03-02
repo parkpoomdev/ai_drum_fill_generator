@@ -539,10 +539,14 @@ const PianoRollBlock = ({
   audioCtx = null,
   pianoInst = null,
 }) => {
-  // 7 rows of pitches — base is C1 (MIDI 24)
-  // Row 6 = top = C1+6 semitones, row 0 = bottom = C1
-  const BASE_MIDI = 24; // C1
-  const rows = [6, 5, 4, 3, 2, 1, 0];
+  // Expanded scrollable pitch lanes — base is C1 (MIDI 24)
+  const BASE_MIDI = 48; // C3 — bottom of visible range; C4=row12, G4=row19
+  const ROW_COUNT = 36; // 3 chromatic octaves (C3–B5)
+  const ROW_HEIGHT = 14; // px per pitch lane — smaller so C3–A4 fits in viewport
+  const PITCH_MAX = ROW_COUNT - 1;
+  const OCTAVE_MIN = -3;
+  const OCTAVE_MAX = 3;
+  const rows = Array.from({ length: ROW_COUNT }, (_, i) => ROW_COUNT - 1 - i);
 
   // Compute display note names for the piano roll rows
   const NOTE_NAMES = [
@@ -559,11 +563,34 @@ const PianoRollBlock = ({
     "A#",
     "B",
   ];
-  const midiForRow = (r) => BASE_MIDI + r + octaveOffset * 12;
+  const midiForRow = (r) => BASE_MIDI + r;
+  const visualMidiForRow = (r) => BASE_MIDI + r + octaveOffset * 12;
   const labelForRow = (r) => {
-    const midi = midiForRow(r);
+    const midi = visualMidiForRow(r);
     const oct = Math.floor(midi / 12) - 1;
     return `${NOTE_NAMES[midi % 12]}${oct}`;
+  };
+  const clampPitch = (p) => Math.max(0, Math.min(PITCH_MAX, p));
+  const visiblePitchTop = ROW_COUNT - 1;
+  const visiblePitchBottom = 0;
+  const scrollRef = useRef(null);
+
+  // Auto-scroll piano roll to show C3–A4 by default (chord range at bottom, melody range in middle)
+  useEffect(() => {
+    if (scrollRef.current) {
+      const VISIBLE_H = 300;
+      // Scroll to the very bottom so C3 (row 0) is at the bottom edge and
+      // A4 (row ~21) is at the top — showing the full chord+melody range at once
+      scrollRef.current.scrollTop = Math.max(
+        0,
+        ROW_COUNT * ROW_HEIGHT - VISIBLE_H,
+      );
+    }
+  }, []);
+
+  const transposeLabel = (v) => {
+    if (v === 0) return "C0";
+    return v > 0 ? `C+${v}` : `C${v}`;
   };
 
   // Drag state for notes
@@ -613,13 +640,13 @@ const PianoRollBlock = ({
       const dx = e.clientX - dragStartX;
       const dy = e.clientY - dragStartY;
       const stepDelta = Math.round(dx / 24);
-      const pitchDelta = Math.round(dy / 20);
+      const pitchDelta = Math.round(dy / ROW_HEIGHT);
       const newNotes = [...notes];
       const note = { ...initialNoteState };
 
       if (dragType === "move") {
         note.start = Math.max(0, Math.min(15, note.start + stepDelta));
-        note.pitch = Math.max(0, Math.min(6, note.pitch - pitchDelta));
+        note.pitch = clampPitch(note.pitch - pitchDelta);
       } else if (dragType === "resize") {
         note.duration = Math.max(
           1,
@@ -667,7 +694,7 @@ const PianoRollBlock = ({
 
   const playNotePreview = (pitch) => {
     if (!pianoInst || !audioCtx) return;
-    const midiNote = 24 + pitch + octaveOffset * 12;
+    const midiNote = BASE_MIDI + pitch;
     try {
       pianoInst.start({ note: midiNote, velocity: 90, duration: 0.8 });
     } catch (_) {}
@@ -723,20 +750,20 @@ const PianoRollBlock = ({
           : "Major");
 
       const rootToMidi = {
-        C: 24,
-        "C#": 25,
-        D: 26,
-        Eb: 27,
-        E: 28,
-        F: 29,
-        "F#": 30,
-        G: 31,
-        "G#": 32,
-        A: 33,
-        Bb: 34,
-        B: 35,
+        C: 48,
+        "C#": 49,
+        D: 50,
+        Eb: 51,
+        E: 52,
+        F: 53,
+        "F#": 54,
+        G: 55,
+        "G#": 56,
+        A: 57,
+        Bb: 58,
+        B: 59,
       };
-      const root = (rootToMidi[normalizedRoot] || 24) + octaveOffset * 12;
+      const root = rootToMidi[normalizedRoot] || 48;
       const pitches = [root];
       if (inferredQuality === "Minor") pitches.push(root + 3, root + 7);
       else if (inferredQuality === "7")
@@ -756,6 +783,50 @@ const PianoRollBlock = ({
     } catch (_) {}
   };
 
+  const parseChordInput = (raw = "") => {
+    const src = String(raw).trim();
+    if (!src) return null;
+    const m = src.match(/^([A-Ga-g])([#b]?)(maj7|m9|sus4|dim|aug|m|7)?$/i);
+    if (!m) return null;
+
+    const letter = m[1].toUpperCase();
+    const accidental = m[2] || "";
+    const suffixRaw = (m[3] || "").toLowerCase();
+
+    let root = `${letter}${accidental}`;
+    if (root === "Db") root = "C#";
+    if (root === "D#") root = "Eb";
+    if (root === "Gb") root = "F#";
+    if (root === "Ab") root = "G#";
+    if (root === "A#") root = "Bb";
+
+    if (!CHORD_ROOTS.includes(root)) return null;
+
+    let quality = "Major";
+    if (suffixRaw === "m") quality = "Minor";
+    else if (suffixRaw === "7") quality = "7";
+    else if (suffixRaw === "maj7") quality = "maj7";
+    else if (suffixRaw === "m9") quality = "m9";
+    else if (suffixRaw === "dim") quality = "dim";
+    else if (suffixRaw === "aug") quality = "aug";
+    else if (suffixRaw === "sus4") quality = "sus4";
+
+    return { root, quality };
+  };
+
+  const formatChordLabel = (chord) =>
+    `${chord.root}${chord.quality === "Major" ? "" : chord.quality}`;
+
+  const qualityBadgeClass = (quality) => {
+    if (quality === "Minor")
+      return "bg-sky-500/20 text-sky-300 border-sky-400/40";
+    if (quality === "Major")
+      return "bg-emerald-500/20 text-emerald-300 border-emerald-400/40";
+    if (quality === "7" || quality === "maj7" || quality === "m9")
+      return "bg-violet-500/20 text-violet-300 border-violet-400/40";
+    return "bg-amber-500/20 text-amber-300 border-amber-400/40";
+  };
+
   return (
     <div
       className="flex flex-col w-full bg-[#111] border border-neutral-700/50 rounded-lg overflow-hidden mt-2 select-none"
@@ -763,38 +834,39 @@ const PianoRollBlock = ({
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
     >
-      {/* Toolbar: Octave Transpose */}
-      <div className="flex items-center justify-between bg-neutral-900 border-b border-neutral-800 px-2 py-1 gap-2">
-        <div className="flex items-center gap-1">
+      {/* Chord Transpose Group (visual only for chord lane) */}
+      <div className="bg-neutral-900 border-b border-neutral-800 px-2 py-2">
+        <div className="flex flex-wrap items-center gap-2">
           <span className="text-[9px] font-bold text-neutral-500 uppercase tracking-widest mr-1">
-            OCT
+            Chord Transpose Group
           </span>
-          {[-3, -2, -1, 0, 1, 2, 3].map((v) => (
-            <button
-              key={v}
-              onClick={(e) => {
-                e.stopPropagation();
-                onOctaveChange(v);
-              }}
-              className={`w-7 h-6 rounded text-[9px] font-bold transition-colors border ${
-                octaveOffset === v
-                  ? "bg-indigo-600 border-indigo-400 text-white shadow-md"
-                  : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-700 hover:text-white"
-              }`}
-              title={`Set octave to C${1 + v} base`}
-            >
-              {v === 0 ? "C1" : v > 0 ? `+${v}` : `${v}`}
-            </button>
-          ))}
-          <span className="ml-2 text-[9px] text-neutral-600 font-mono">
-            Base: {labelForRow(0)} – {labelForRow(6)}
+          <div className="flex flex-wrap items-center gap-1 bg-neutral-800/70 border border-neutral-700 rounded px-1 py-1">
+            {Array.from(
+              { length: OCTAVE_MAX - OCTAVE_MIN + 1 },
+              (_, idx) => OCTAVE_MIN + idx,
+            ).map((v) => (
+              <button
+                key={v}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onOctaveChange(v);
+                }}
+                className={`h-6 px-2 rounded text-[9px] font-bold transition-colors border ${
+                  octaveOffset === v
+                    ? "bg-indigo-600 border-indigo-400 text-white shadow-md"
+                    : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:bg-neutral-700 hover:text-white"
+                }`}
+                title={`Visual transpose ${transposeLabel(v)} (MIDI playback unchanged)`}
+              >
+                {transposeLabel(v)}
+              </button>
+            ))}
+          </div>
+          <span className="text-[9px] text-neutral-600 font-mono ml-auto">
+            Visual {labelForRow(visiblePitchBottom)} –{" "}
+            {labelForRow(visiblePitchTop)}
           </span>
         </div>
-
-        {/* Range label only — Loop/Next/Stop moved to bar header in lyrics panel */}
-        <span className="text-[9px] text-neutral-600 font-mono ml-auto">
-          {labelForRow(0)} – {labelForRow(6)}
-        </span>
       </div>
 
       {/* Chords Track */}
@@ -802,7 +874,7 @@ const PianoRollBlock = ({
         <div className="flex items-center px-2 border-r border-neutral-700 text-[10px] font-bold text-neutral-400 w-12 shrink-0">
           Chords
         </div>
-        <div className="flex-1 relative overflow-hidden h-full">
+        <div className="flex-1 relative h-full overflow-visible">
           {/* Background grid */}
           <div className="absolute inset-0 flex pointer-events-none opacity-20">
             {Array(16)
@@ -831,32 +903,50 @@ const PianoRollBlock = ({
                   handleChordPointerDown(e, chord, i, "move")
                 }
               >
-                {/* Chord pill — click plays preview, double-click opens editor */}
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    playChordPreview(chord);
-                  }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation();
-                    setOpenChordIdx(isEditing ? null : i);
-                  }}
-                  className={`w-full h-full text-[10px] font-bold text-indigo-300 hover:bg-indigo-500/30 border rounded flex items-center justify-center truncate px-1 shadow-sm transition-colors ${
+                {/* Chord pill header with Edit + quality label */}
+                <div
+                  className={`w-full h-full border rounded shadow-sm transition-colors flex items-center justify-between gap-1 px-1 ${
                     isEditing
                       ? "bg-indigo-500/40 border-indigo-400"
-                      : "bg-indigo-500/20 border-indigo-500/50"
+                      : "bg-indigo-500/20 border-indigo-500/50 hover:bg-indigo-500/30"
                   }`}
                 >
-                  {chord.root}
-                  {chord.quality === "Major" ? "" : chord.quality}
-                </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      playChordPreview(chord);
+                    }}
+                    className="min-w-0 flex-1 text-left truncate text-[10px] font-bold text-indigo-200"
+                    title="Click to preview"
+                  >
+                    {formatChordLabel(chord)}
+                  </button>
+
+                  <span
+                    className={`px-1 py-0.5 rounded border text-[8px] font-bold uppercase tracking-widest ${qualityBadgeClass(chord.quality || "Major")}`}
+                  >
+                    {(chord.quality || "Major").toLowerCase()}
+                  </span>
+
+                  <button
+                    data-chord-editor
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpenChordIdx(isEditing ? null : i);
+                    }}
+                    className="text-[8px] font-bold px-1.5 py-0.5 rounded bg-neutral-900/50 border border-indigo-300/40 text-indigo-200 hover:bg-indigo-600/50"
+                    title="Edit chord"
+                  >
+                    Edit
+                  </button>
+                </div>
 
                 {/* Hover Quick-Edit Panel */}
                 <div
                   data-chord-quick
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute top-full left-0 mt-1 bg-[#161628] border border-indigo-600/40 rounded-lg shadow-2xl z-40 opacity-0 pointer-events-none group-hover/chord:opacity-100 group-hover/chord:pointer-events-auto transition-all duration-150 p-2 w-52"
+                  className="absolute top-full left-0 mt-1 bg-[#161628] border border-indigo-600/40 rounded-lg shadow-2xl z-40 opacity-0 pointer-events-none group-hover/chord:opacity-100 group-hover/chord:pointer-events-auto group-focus-within/chord:opacity-100 group-focus-within/chord:pointer-events-auto transition-all duration-150 p-2 w-52"
                 >
                   <div className="text-[8px] font-bold text-indigo-300 uppercase tracking-widest mb-1">
                     Quick Edit
@@ -955,6 +1045,54 @@ const PianoRollBlock = ({
                     </div>
 
                     <div className="p-3 flex flex-col gap-3">
+                      {/* Text input parser (e.g. C, Am, F#maj7, Bdim) */}
+                      <div>
+                        <div className="text-[8px] font-bold text-neutral-500 uppercase tracking-widest mb-1">
+                          Chord Text Input
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <input
+                            type="text"
+                            defaultValue={formatChordLabel(chord)}
+                            onClick={(e) => e.stopPropagation()}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter") {
+                                const parsed = parseChordInput(
+                                  e.currentTarget.value,
+                                );
+                                if (!parsed) return;
+                                const newC = [...chords];
+                                newC[i] = { ...newC[i], ...parsed };
+                                onChordsChange(newC);
+                                playChordPreview(newC[i]);
+                              }
+                            }}
+                            className="flex-1 bg-neutral-900 border border-neutral-700 rounded px-2 py-1 text-[10px] text-white focus:outline-none focus:border-indigo-500"
+                            placeholder="C, Am, F#maj7, Bdim..."
+                          />
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const input =
+                                e.currentTarget.parentElement?.querySelector(
+                                  "input",
+                                );
+                              const parsed = parseChordInput(
+                                input?.value || "",
+                              );
+                              if (!parsed) return;
+                              const newC = [...chords];
+                              newC[i] = { ...newC[i], ...parsed };
+                              onChordsChange(newC);
+                              playChordPreview(newC[i]);
+                            }}
+                            className="text-[9px] font-bold px-2 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/60 text-indigo-200 border border-indigo-400/40"
+                          >
+                            Apply
+                          </button>
+                        </div>
+                      </div>
+
                       {/* Root */}
                       <div>
                         <div className="text-[8px] font-bold text-neutral-500 uppercase tracking-widest mb-1">
@@ -1098,36 +1236,62 @@ const PianoRollBlock = ({
         </div>
       </div>
 
-      {/* Piano Roll Grid */}
-      <div className="flex bg-[#0a0a0a] relative h-[140px] overflow-hidden">
-        <div className="flex flex-col w-12 shrink-0 border-r border-neutral-800 bg-neutral-900 pb-2">
+      {/* Piano Roll Grid (true vertical scrolling) */}
+      <div
+        ref={scrollRef}
+        className="flex bg-[#0a0a0a] relative h-[300px] overflow-y-auto overflow-x-hidden"
+      >
+        <div
+          className="flex flex-col w-14 shrink-0 border-r border-neutral-800 bg-neutral-900"
+          style={{ height: ROW_COUNT * ROW_HEIGHT }}
+        >
           {rows.map((r) => (
             <div
               key={r}
-              className={`flex-1 flex items-center justify-center text-[7px] font-mono border-b border-neutral-800/50 ${
+              className={`flex items-center justify-center text-[8px] font-mono border-b border-neutral-800/70 ${
                 NOTE_NAMES[midiForRow(r) % 12] === "C"
-                  ? "text-indigo-400 font-bold bg-indigo-500/5"
-                  : "text-neutral-600"
+                  ? "text-indigo-300 font-bold bg-indigo-500/10"
+                  : "text-neutral-500"
               }`}
+              style={{ height: ROW_HEIGHT }}
             >
               {labelForRow(r)}
             </div>
           ))}
         </div>
-        <div className="flex-1 relative border-b border-neutral-800 pb-2">
-          {/* Grid Lines */}
-          <div className="absolute inset-0 flex flex-col pointer-events-none">
+
+        <div
+          className="flex-1 relative border-b border-neutral-800"
+          style={{ height: ROW_COUNT * ROW_HEIGHT }}
+        >
+          {/* Horizontal pitch lines */}
+          <div className="absolute inset-0 pointer-events-none">
             {rows.map((r) => (
-              <div key={r} className="flex-1 border-b border-white/[0.02]" />
+              <div
+                key={r}
+                className={`absolute left-0 right-0 border-b ${
+                  NOTE_NAMES[midiForRow(r) % 12] === "C"
+                    ? "border-indigo-500/25"
+                    : "border-white/[0.03]"
+                }`}
+                style={{
+                  top: (ROW_COUNT - 1 - r) * ROW_HEIGHT,
+                  height: ROW_HEIGHT,
+                }}
+              />
             ))}
           </div>
+
+          {/* Vertical beat lines */}
           <div className="absolute inset-0 flex pointer-events-none">
             {Array(16)
               .fill(0)
               .map((_, i) => (
                 <div
                   key={i}
-                  className={`flex-1 border-r ${i % 4 === 3 ? "border-white/10" : "border-white/[0.02]"}`}
+                  className={`flex-1 border-r ${
+                    i % 4 === 3 ? "border-white/15" : "border-white/[0.03]"
+                  }`}
                 />
               ))}
           </div>
@@ -1146,10 +1310,13 @@ const PianoRollBlock = ({
           {notes.map((note) => {
             const left = (note.start / 16) * 100;
             const width = (note.duration / 16) * 100;
-            const top = ((6 - note.pitch) / 7) * 100;
-            const height = (1 / 7) * 100;
+            const safePitch = Math.max(
+              visiblePitchBottom,
+              Math.min(visiblePitchTop, note.pitch),
+            );
+            const top = (ROW_COUNT - 1 - safePitch) * ROW_HEIGHT;
             const isSelected = note.id === selectedNoteId;
-            const noteName = labelForRow(note.pitch);
+            const noteName = labelForRow(safePitch);
 
             return (
               <div
@@ -1162,14 +1329,13 @@ const PianoRollBlock = ({
                 style={{
                   left: `${left}%`,
                   width: `${width}%`,
-                  top: `${top}%`,
-                  height: `${height}%`,
+                  top,
+                  height: ROW_HEIGHT - 1,
                 }}
                 onPointerDown={(e) => handlePointerDown(e, note, "move")}
                 onClick={(e) => handleNoteClick(e, note)}
                 title={`${note.text} • ${noteName} • Click to preview • Dbl-click to delete`}
               >
-                {/* Note label */}
                 <div className="flex items-center gap-0.5 px-1 min-w-0 pointer-events-none">
                   <span className="text-[9px] font-bold text-emerald-100 truncate drop-shadow-md leading-none">
                     {note.text}
@@ -1181,7 +1347,6 @@ const PianoRollBlock = ({
                   )}
                 </div>
 
-                {/* Delete button — shown when selected */}
                 {isSelected && (
                   <button
                     className="absolute -top-2 -right-2 w-4 h-4 bg-red-500 hover:bg-red-400 text-white rounded-full flex items-center justify-center text-[9px] border border-white/30 shadow-lg z-20 leading-none"
@@ -1196,7 +1361,6 @@ const PianoRollBlock = ({
                   </button>
                 )}
 
-                {/* Resize Handle */}
                 <div
                   className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-emerald-400/50 transition-colors"
                   onPointerDown={(e) => handlePointerDown(e, note, "resize")}
@@ -1217,7 +1381,9 @@ const PianoRollBlock = ({
           <span>Chord: Click=preview • Dbl-click=edit/add • ×=delete</span>
         </div>
         <span className="text-neutral-700 font-mono">
-          {labelForRow(0)}–{labelForRow(6)}
+          Chord Visual Transpose {transposeLabel(octaveOffset)} • MIDI Fixed
+          Pitch • {labelForRow(visiblePitchBottom)}–
+          {labelForRow(visiblePitchTop)}
         </span>
       </div>
     </div>
@@ -1699,37 +1865,56 @@ const DrumFillGen = () => {
           // 1. Play Chord
           if (currentSeg.barChords && currentSeg.barChords[currentBarIdx]) {
             const chords = currentSeg.barChords[currentBarIdx];
-            chords.forEach((chord) => {
-              if (chord.start === stepInBar) {
+            chords.forEach((chord, chordIndex) => {
+              const chordStart = chord.start ?? chordIndex * 4;
+              if (chordStart === stepInBar) {
                 // Simple chord to MIDI mapping
                 const rootToMidi = {
-                  C: 24,
-                  "C#": 25,
-                  D: 26,
-                  Eb: 27,
-                  E: 28,
-                  F: 29,
-                  "F#": 30,
-                  G: 31,
-                  "G#": 32,
-                  A: 33,
-                  Bb: 34,
-                  B: 35,
+                  C: 48,
+                  "C#": 49,
+                  D: 50,
+                  Eb: 51,
+                  E: 52,
+                  F: 53,
+                  "F#": 54,
+                  G: 55,
+                  "G#": 56,
+                  A: 57,
+                  Bb: 58,
+                  B: 59,
                 };
-                const root = (rootToMidi[chord.root] || 24) + octaveOffset * 12;
+                const normalizedRoot =
+                  chord?.root === "Am"
+                    ? "A"
+                    : chord?.root === "A#m"
+                      ? "Bb"
+                      : chord?.root === "D#m"
+                        ? "Eb"
+                        : chord?.root === "F#m"
+                          ? "F#"
+                          : chord?.root === "G#m"
+                            ? "G#"
+                            : chord?.root;
+                const inferredQuality =
+                  chord?.quality ||
+                  (typeof chord?.root === "string" && chord.root.endsWith("m")
+                    ? "Minor"
+                    : "Major");
+                const root = rootToMidi[normalizedRoot] || 48;
                 const pitches = [root];
-                if (chord.quality === "Minor") pitches.push(root + 3, root + 7);
-                else if (chord.quality === "7")
+                if (inferredQuality === "Minor")
+                  pitches.push(root + 3, root + 7);
+                else if (inferredQuality === "7")
                   pitches.push(root + 4, root + 7, root + 10);
-                else if (chord.quality === "maj7")
+                else if (inferredQuality === "maj7")
                   pitches.push(root + 4, root + 7, root + 11);
-                else if (chord.quality === "dim")
+                else if (inferredQuality === "dim")
                   pitches.push(root + 3, root + 6);
-                else if (chord.quality === "aug")
+                else if (inferredQuality === "aug")
                   pitches.push(root + 4, root + 8);
-                else if (chord.quality === "sus4")
+                else if (inferredQuality === "sus4")
                   pitches.push(root + 5, root + 7);
-                else if (chord.quality === "m9")
+                else if (inferredQuality === "m9")
                   pitches.push(root + 3, root + 7, root + 10, root + 14);
                 else pitches.push(root + 4, root + 7); // Major default
 
@@ -1750,8 +1935,8 @@ const DrumFillGen = () => {
             const notes = currentSeg.barLyrics[currentBarIdx];
             notes.forEach((note) => {
               if (note.start === stepInBar) {
-                // row 0 = C1 (24), row 6 = A1 (33), ascending by semitone
-                const midiPitch = 24 + note.pitch + octaveOffset * 12;
+                // row 0 = C3 (48), row 12 = C4 (60), row 19 = G4 (67), ascending by semitone
+                const midiPitch = 48 + note.pitch;
                 pianoRef.current.start({
                   note: midiPitch,
                   velocity: 80,
@@ -3349,7 +3534,7 @@ const DrumFillGen = () => {
                                         ? {
                                             id: `legacy-${i}`,
                                             text: w,
-                                            pitch: Math.max(0, 6 - (i % 7)),
+                                            pitch: 14, // D4 — comfortable mid-melody default
                                             start: Math.min(15, i * 2),
                                             duration: 2,
                                           }
@@ -3456,17 +3641,40 @@ const DrumFillGen = () => {
                                             16 / Math.max(1, numWords),
                                           ),
                                         );
+                                        // Random singable melody in C4–A4 range
+                                        // Rows relative to BASE_MIDI=48: C4=12, D4=14, E4=16, F4=17, G4=19, A4=21
+                                        const MELODY_SCALE = [
+                                          12, 14, 16, 17, 19, 21,
+                                        ];
+                                        const melodyIdxs = [0]; // start at C4
+                                        for (let mi = 1; mi < numWords; mi++) {
+                                          const prev = melodyIdxs[mi - 1];
+                                          // Weighted random walk: prefer steps of ±1 scale degree
+                                          const raw = Math.round(
+                                            Math.random() * 4 - 2,
+                                          );
+                                          const step = raw === 0 ? 1 : raw;
+                                          melodyIdxs.push(
+                                            Math.max(
+                                              0,
+                                              Math.min(
+                                                MELODY_SCALE.length - 1,
+                                                prev + step,
+                                              ),
+                                            ),
+                                          );
+                                        }
                                         const newNotes = newWords.map(
                                           (word, i) => ({
                                             id: `note-${Date.now()}-${i}`,
                                             text: word,
-                                            pitch: Math.max(0, 6 - i), // Descending pitches
-                                            start: Math.min(15, i * stepSize), // Spread across 16 steps
+                                            pitch: MELODY_SCALE[melodyIdxs[i]], // C4–A4 singable melody
+                                            start: Math.min(15, i * stepSize),
                                             duration: Math.min(
                                               stepSize,
                                               16 - i * stepSize,
                                               4,
-                                            ), // Max length 4
+                                            ),
                                           }),
                                         );
 
