@@ -348,35 +348,57 @@ const MiniPattern = ({ pattern }) => {
 // MAIN COMPONENT
 // ─────────────────────────────────────────────
 const DrumFillGen = () => {
+    // ── Load Initial State ──
+    const getSavedState = () => {
+        try {
+            const stored = localStorage.getItem("drumFillGen_saveState");
+            if (!stored) return null;
+            const parsed = JSON.parse(stored);
+            if (parsed && Array.isArray(parsed.segments)) return parsed;
+            return null;
+        } catch (e) { return null; }
+    };
+    const savedState = getSavedState();
+
     // ── App mode ──
-    const [appMode, setAppMode] = useState("generator"); // "generator" | "arrangement"
+    const [appMode, setAppMode] = useState("generator");
 
     // ── Generator sub-mode ──
-    const [generatorMode, setGeneratorMode] = useState("groove"); // "groove" | "fill"
+    const [generatorMode, setGeneratorMode] = useState(savedState?.generatorMode ?? "groove");
 
     // ── Playback ──
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentStep, setCurrentStep] = useState(-1);
-    const [bpm, setBpm] = useState(110);
+    const [bpm, setBpm] = useState(savedState?.bpm ?? 110);
 
     // ── Generator params ──
-    const [genre, setGenre] = useState("acoustic");
-    const [complexity, setComplexity] = useState(60);
-    const [intensity, setIntensity] = useState(70);
-    const [fillAmount, setFillAmount] = useState(25);
-    const [pattern, setPattern] = useState(() => generatePattern("acoustic", 60, 70, 25, "groove"));
+    const [genre, setGenre] = useState(savedState?.genre ?? "acoustic");
+    const [complexity, setComplexity] = useState(savedState?.complexity ?? 60);
+    const [intensity, setIntensity] = useState(savedState?.intensity ?? 70);
+    const [fillAmount, setFillAmount] = useState(savedState?.fillAmount ?? 25);
 
-    // ── Library ──
-    const [library, setLibrary] = useState([
+    // ── Manual Pattern ──
+    const [manualPattern, setManualPattern] = useState(
+        savedState?.manualPattern ?? Array(16).fill(null).map(() => ({ kick: 0, snare: 0 }))
+    );
+
+    const defaultLib = [
         { id: "lib-1", name: "Default Groove", type: "groove", pattern: generatePattern("acoustic", 60, 70, 0, "groove"), params: { genre: "acoustic", complexity: 60, intensity: 70, fillAmount: 0, generatorMode: "groove" } },
         { id: "lib-2", name: "Default Fill", type: "fill", pattern: generatePattern("acoustic", 60, 70, 50, "fill"), params: { genre: "acoustic", complexity: 60, intensity: 70, fillAmount: 50, generatorMode: "fill" } }
-    ]);
+    ];
+
+    const [pattern, setPattern] = useState(savedState?.pattern ?? (() => generatePattern("acoustic", 60, 70, 25, "groove")));
+
+    // ── Library ──
+    const [library, setLibrary] = useState(savedState?.library ?? defaultLib);
 
     // ── Arrangement ──
-    const [segments, setSegments] = useState([
-        { id: "seg-1", name: "Intro", bars: ["lib-1", null, null, null] },
-        { id: "seg-2", name: "Verse", bars: ["lib-1", "lib-1", "lib-1", "lib-2"] }
-    ]);
+    const [segments, setSegments] = useState(
+        savedState?.segments ?? [
+            { id: "seg-1", name: "Intro", bars: ["lib-1", null, null, null] },
+            { id: "seg-2", name: "Verse", bars: ["lib-1", "lib-1", "lib-1", "lib-2"] }
+        ]
+    );
     const [confirmModal, setConfirmModal] = useState(null);
     const [renamingId, setRenamingId] = useState(null);
     const [renameValue, setRenameValue] = useState("");
@@ -410,10 +432,27 @@ const DrumFillGen = () => {
 
     const maxSteps = useMemo(() => activePattern.length || 16, [activePattern]);
 
+    // ── Auto Save to LocalStorage ──
+    useEffect(() => {
+        const stateToSave = {
+            generatorMode, bpm, genre, complexity, intensity, fillAmount,
+            manualPattern, pattern, library, segments
+        };
+        localStorage.setItem("drumFillGen_saveState", JSON.stringify(stateToSave));
+    }, [generatorMode, bpm, genre, complexity, intensity, fillAmount, manualPattern, pattern, library, segments]);
+
     // ── Regen when params change ──
     useEffect(() => {
-        setPattern(generatePattern(genre, complexity, intensity, generatorMode === 'groove' ? 0 : fillAmount, generatorMode));
-    }, [genre, complexity, intensity, fillAmount, generatorMode]);
+        const genModeRaw = generatorMode === 'manual' ? 'groove' : generatorMode;
+        const newPattern = generatePattern(genre, complexity, intensity, genModeRaw === 'groove' ? 0 : fillAmount, genModeRaw);
+        if (generatorMode === 'manual') {
+            for (let i = 0; i < 16; i++) {
+                newPattern[i].kick = manualPattern[i].kick;
+                newPattern[i].snare = manualPattern[i].snare;
+            }
+        }
+        setPattern(newPattern);
+    }, [genre, complexity, intensity, fillAmount, generatorMode, manualPattern]);
 
     // ── MIDI ──
     const generateMidiBlob = useCallback(() => {
@@ -555,38 +594,38 @@ const DrumFillGen = () => {
 
     // ── Library helpers ──
     const saveToLibrary = () => {
-        const effectiveFill = generatorMode === 'groove' ? 0 : fillAmount;
+        const effectiveFill = (generatorMode === 'groove' || generatorMode === 'manual') ? 0 : fillAmount;
 
         if (editingLibId) {
-            // Update existing with deep copy
             setLibrary(prev => prev.map(l => l.id === editingLibId ? {
                 ...l,
                 pattern: pattern.map(s => ({ ...s })),
-                params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
+                params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode },
+                manualPattern: manualPattern.map(s => ({ ...s }))
             } : l));
         } else {
-            // Add new with deep copy
+            const typeLabel = generatorMode === 'groove' ? 'Groove' : generatorMode === 'manual' ? 'Manual' : 'Fill';
             const newItem = {
                 id: `lib-${Date.now()}`,
-                name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${generatorMode === 'groove' ? 'Groove' : 'Fill'}`,
+                name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${typeLabel}`,
                 type: generatorMode,
                 pattern: pattern.map(s => ({ ...s })),
-                params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
+                params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode },
+                manualPattern: manualPattern.map(s => ({ ...s }))
             };
             setLibrary(prev => [...prev, newItem]);
         }
-
     };
 
 
     const loadFromLibrary = (libItem) => {
-        // Double-click: load params into generator and switch to generator mode
         const { params } = libItem;
         setGenre(params.genre);
         setComplexity(params.complexity);
         setIntensity(params.intensity);
         setFillAmount(params.fillAmount);
         setGeneratorMode(params.generatorMode);
+        if (libItem.manualPattern) setManualPattern(libItem.manualPattern.map(s => ({ ...s })));
         setPattern([...libItem.pattern]);
         setEditingLibId(libItem.id);
         setAppMode("generator");
@@ -763,7 +802,7 @@ const DrumFillGen = () => {
                                     )}
                                 </div>
                                 <div className="flex items-center gap-1 shrink-0">
-                                    <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded ${item.type === 'fill' ? 'bg-rose-500/20 text-rose-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                    <span className={`text-[8px] uppercase font-bold px-1 py-0.5 rounded ${item.type === 'fill' ? 'bg-rose-500/20 text-rose-400' : item.type === 'manual' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
                                         {item.type}
                                     </span>
                                     <button onClick={(e) => { e.stopPropagation(); deleteFromLibrary(item.id); }}
@@ -822,10 +861,54 @@ const DrumFillGen = () => {
                         <input type="number" value={bpm} onChange={(e) => setBpm(Number(e.target.value))}
                             className="bg-transparent text-white font-mono font-bold text-right w-12 focus:outline-none" />
                     </div>
+                    <input type="file" accept=".json" id="import-project" className="hidden" onChange={(e) => {
+                        const file = e.target.files[0];
+                        if (!file) return;
+                        const reader = new FileReader();
+                        reader.onload = (event) => {
+                            try {
+                                const parsed = JSON.parse(event.target.result);
+                                if (parsed && Array.isArray(parsed.segments)) {
+                                    if (parsed.generatorMode) setGeneratorMode(parsed.generatorMode);
+                                    if (parsed.bpm) setBpm(parsed.bpm);
+                                    if (parsed.genre) setGenre(parsed.genre);
+                                    if (parsed.complexity !== undefined) setComplexity(parsed.complexity);
+                                    if (parsed.intensity !== undefined) setIntensity(parsed.intensity);
+                                    if (parsed.fillAmount !== undefined) setFillAmount(parsed.fillAmount);
+                                    if (parsed.manualPattern) setManualPattern(parsed.manualPattern);
+                                    if (parsed.pattern) setPattern(parsed.pattern);
+                                    if (parsed.library) setLibrary(parsed.library);
+                                    if (parsed.segments) setSegments(parsed.segments);
+                                }
+                            } catch (error) {
+                                alert("Invalid project file.");
+                            }
+                        };
+                        reader.readAsText(file);
+                        e.target.value = ''; // reset
+                    }} />
+                    <button onClick={() => document.getElementById('import-project').click()}
+                        className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-200 flex items-center gap-2 cursor-pointer transition-colors"
+                        title="Load Project">
+                        <Archive size={14} /> LOAD
+                    </button>
+                    <button onClick={() => {
+                        const stateToSave = { generatorMode, bpm, genre, complexity, intensity, fillAmount, manualPattern, pattern, library, segments };
+                        const blob = new Blob([JSON.stringify(stateToSave, null, 2)], { type: "application/json" });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url; a.download = `drum-project-${Date.now()}.json`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                    }}
+                        className="px-4 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 text-indigo-400 rounded-lg text-sm flex items-center gap-2 cursor-pointer transition-colors font-bold"
+                        title="Save Project">
+                        <Save size={14} /> SAVE
+                    </button>
                     <button onClick={exportMIDI}
                         className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-200 flex items-center gap-2 cursor-pointer transition-colors"
                         title="Download MIDI">
-                        <Download size={14} /> EXPORT
+                        <Download size={14} /> EXPORT MIDI
                     </button>
                 </div>
             </div>
@@ -851,11 +934,15 @@ const DrumFillGen = () => {
                                     className={`px-5 py-1.5 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${generatorMode === "fill" ? 'bg-rose-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
                                     <Music2 size={14} /> Fill
                                 </button>
+                                <button onClick={() => setGeneratorMode("manual")}
+                                    className={`px-5 py-1.5 rounded-md text-sm font-bold flex items-center gap-2 transition-all ${generatorMode === "manual" ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-gray-200'}`}>
+                                    <LayoutGrid size={14} /> Manual
+                                </button>
                             </div>
                             <p className="text-xs text-gray-500">
-                                {generatorMode === 'groove'
-                                    ? 'Repeating rhythmic backbone — the core loop that anchors the song.'
-                                    : 'End-of-phrase accent phrase — the burst that transitions sections.'}
+                                {generatorMode === 'groove' ? 'Repeating rhythmic backbone — the core loop that anchors the song.' :
+                                    generatorMode === 'fill' ? 'End-of-phrase accent phrase — the burst that transitions sections.' :
+                                        'Draw your own kick and snare rhythm on the grid, AI generates the hats/toms.'}
                             </p>
                         </div>
 
@@ -907,7 +994,17 @@ const DrumFillGen = () => {
                                         )}
                                         <div className="flex flex-col gap-2 pt-2">
                                             <div className="flex gap-2">
-                                                <button onClick={() => setPattern(generatePattern(genre, complexity, intensity, generatorMode === 'groove' ? 0 : fillAmount, generatorMode))}
+                                                <button onClick={() => {
+                                                    const genModeRaw = generatorMode === 'manual' ? 'groove' : generatorMode;
+                                                    const newPattern = generatePattern(genre, complexity, intensity, genModeRaw === 'groove' ? 0 : fillAmount, genModeRaw);
+                                                    if (generatorMode === 'manual') {
+                                                        for (let i = 0; i < 16; i++) {
+                                                            newPattern[i].kick = manualPattern[i].kick;
+                                                            newPattern[i].snare = manualPattern[i].snare;
+                                                        }
+                                                    }
+                                                    setPattern(newPattern);
+                                                }}
                                                     className="flex-1 py-2.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-white font-bold flex items-center justify-center gap-2 border border-neutral-600 transition-colors text-sm">
                                                     <RefreshCw size={14} /> REGEN
                                                 </button>
@@ -924,13 +1021,15 @@ const DrumFillGen = () => {
                                                                 setEditingLibId(null);
                                                                 // We need to use a timeout/effect ideally, or just duplicate the save logic
                                                                 // Because state updates are async, the easiest way is to direct duplicate save logic for 'Save As New'
-                                                                const effectiveFill = generatorMode === 'groove' ? 0 : fillAmount;
+                                                                const effectiveFill = (generatorMode === 'groove' || generatorMode === 'manual') ? 0 : fillAmount;
+                                                                const typeLabel = generatorMode === 'groove' ? 'Groove' : generatorMode === 'manual' ? 'Manual' : 'Fill';
                                                                 const newItem = {
                                                                     id: `lib-${Date.now()}`,
-                                                                    name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${generatorMode === 'groove' ? 'Groove' : 'Fill'} (Copy)`,
+                                                                    name: `${genre.charAt(0).toUpperCase() + genre.slice(1)} ${typeLabel} (Copy)`,
                                                                     type: generatorMode,
                                                                     pattern: pattern.map(s => ({ ...s })),
-                                                                    params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode }
+                                                                    params: { genre, complexity, intensity, fillAmount: effectiveFill, generatorMode },
+                                                                    manualPattern: manualPattern.map(s => ({ ...s }))
                                                                 };
                                                                 setLibrary(prev => [...prev, newItem]);
                                                                 setEditingLibId(currentId); // restore edit link
@@ -966,8 +1065,8 @@ const DrumFillGen = () => {
                                 <div className="bg-[#0a0a0a] rounded-xl border border-neutral-700 p-5 shadow-inner flex flex-col">
                                     <div className="flex justify-between items-center mb-3">
                                         <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Live Preview — 1 Bar</h2>
-                                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${generatorMode === "fill" && fillAmount > 0 ? "bg-rose-500/20 text-rose-400" : "bg-emerald-500/20 text-emerald-400"}`}>
-                                            {generatorMode === "groove" ? "GROOVE" : fillAmount > 0 ? "FILL ACTIVE" : "GROOVE"}
+                                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded ${generatorMode === "fill" && fillAmount > 0 ? "bg-rose-500/20 text-rose-400" : generatorMode === "manual" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}>
+                                            {generatorMode === "groove" ? "GROOVE" : generatorMode === "manual" ? "MANUAL ACTIVE" : fillAmount > 0 ? "FILL ACTIVE" : "GROOVE"}
                                         </span>
                                     </div>
 
@@ -1004,6 +1103,19 @@ const DrumFillGen = () => {
                                                                         <div className="absolute bottom-0 left-0 right-0 bg-black/30" style={{ height: `${(1 - val) * 100}%` }} />
                                                                     </div>
                                                                 )}
+                                                                {generatorMode === 'manual' && (inst.id === 'kick' || inst.id === 'snare') && (
+                                                                    <div className="absolute inset-0 cursor-pointer hover:bg-white/20 transition-colors z-20"
+                                                                        onClick={() => {
+                                                                            const currentVal = manualPattern[si][inst.id];
+                                                                            const newVal = currentVal > 0 ? 0 : 1;
+                                                                            setManualPattern(prev => {
+                                                                                const next = [...prev];
+                                                                                next[si] = { ...next[si], [inst.id]: newVal };
+                                                                                return next;
+                                                                            });
+                                                                        }}
+                                                                    />
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
@@ -1030,136 +1142,251 @@ const DrumFillGen = () => {
 
                 {/* ═══════════════════════════════ ARRANGEMENT MODE ═══════════════════ */}
                 {appMode === "arrangement" && (
-                    <div className="flex-1 flex flex-col h-full overflow-hidden">
+                    <div className="flex-1 flex overflow-hidden">
 
-                        {/* Arrangement toolbar */}
-                        <div className="bg-neutral-900 border-b border-neutral-800 px-5 py-2 flex items-center gap-4 shrink-0">
-                            <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Arrangement Timeline</span>
-                            <div className="flex-1" />
-                            <button onClick={() => setIsPlaying(!isPlaying)}
-                                className={`px-5 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all text-sm ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>
-                                {isPlaying ? <><Square size={14} fill="currentColor" /> STOP</> : <><Play size={14} fill="currentColor" /> PLAY</>}
-                            </button>
-                        </div>
+                        {/* LEFT: ARRANGEMENT TIMELINE */}
+                        <div className="flex-1 flex flex-col border-r border-neutral-800 overflow-hidden">
+                            {/* Arrangement toolbar */}
+                            <div className="bg-neutral-900 border-b border-neutral-800 px-5 py-2 flex items-center gap-4 shrink-0">
+                                <span className="text-xs text-gray-500 font-bold uppercase tracking-widest">Arrangement Timeline</span>
+                                <div className="flex-1" />
+                                <button onClick={() => setIsPlaying(!isPlaying)}
+                                    className={`px-5 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all text-sm ${isPlaying ? 'bg-red-500 hover:bg-red-600 text-white' : 'bg-emerald-500 hover:bg-emerald-600 text-white'}`}>
+                                    {isPlaying ? <><Square size={14} fill="currentColor" /> STOP</> : <><Play size={14} fill="currentColor" /> PLAY</>}
+                                </button>
+                            </div>
 
-                        {/* Timeline canvas */}
-                        <div className="flex-1 overflow-auto bg-[#080808] p-6">
-                            <div className="flex items-start gap-4 w-max pb-12">
-                                {segments.map((segment, segIndex) => (
-                                    <div key={segment.id} className="w-44 shrink-0 flex flex-col">
-                                        {/* Segment header */}
-                                        <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center group/seghead">
-                                            <button
-                                                onClick={() => {
+                            {/* Timeline canvas */}
+                            <div className="flex-1 overflow-auto bg-[#080808] p-6">
+                                <div className="flex items-start gap-4 w-max pb-12">
+                                    {segments.map((segment, segIndex) => (
+                                        <div key={segment.id} className="w-44 shrink-0 flex flex-col">
+                                            {/* Segment header */}
+                                            <div className="bg-neutral-800 rounded-t-lg border-b-2 border-indigo-500 flex items-center group/seghead">
+                                                <button
+                                                    onClick={() => {
+                                                        let precedingBars = 0;
+                                                        for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
+                                                        seekToBar(precedingBars);
+                                                    }}
+                                                    className="pl-2.5 text-neutral-500 hover:text-emerald-400 transition-colors"
+                                                    title={`Play ${segment.name}`}
+                                                >
+                                                    <Play size={12} fill="currentColor" />
+                                                </button>
+                                                <input value={segment.name}
+                                                    onChange={(e) => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, name: e.target.value }))}
+                                                    className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-1 border-none outline-none text-gray-200" />
+
+                                                {/* ⋮ Kebab menu */}
+                                                <div className="relative shrink-0">
+                                                    <button
+                                                        onClick={(e) => { e.stopPropagation(); setOpenSegMenu(openSegMenu === segIndex ? null : segIndex); }}
+                                                        className="text-neutral-500 hover:text-white px-2 py-2 rounded hover:bg-neutral-700 transition-colors text-base leading-none"
+                                                        title="Segment options"
+                                                    >⋮</button>
+                                                    {openSegMenu === segIndex && (
+                                                        <div
+                                                            onClick={(e) => e.stopPropagation()}
+                                                            className="absolute right-0 top-full mt-1 w-36 bg-neutral-800 border border-neutral-600 rounded-lg shadow-2xl z-50 overflow-hidden">
+                                                            <button
+                                                                onClick={() => { deleteSegment(segIndex); setOpenSegMenu(null); }}
+                                                                className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left">
+                                                                <Trash2 size={12} /> Delete Segment
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Bars */}
+                                            <div className="bg-neutral-900/50 border border-t-0 border-neutral-800 rounded-b-lg p-2 flex flex-col gap-2 min-h-[80px]">
+                                                {segment.bars.map((barLibId, barIndex) => {
+                                                    const item = library.find(l => l.id === barLibId);
+
                                                     let precedingBars = 0;
                                                     for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
-                                                    seekToBar(precedingBars);
-                                                }}
-                                                className="pl-2.5 text-neutral-500 hover:text-emerald-400 transition-colors"
-                                                title={`Play ${segment.name}`}
-                                            >
-                                                <Play size={12} fill="currentColor" />
-                                            </button>
-                                            <input value={segment.name}
-                                                onChange={(e) => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, name: e.target.value }))}
-                                                className="bg-transparent text-center text-sm font-bold flex-1 py-2 px-1 border-none outline-none text-gray-200" />
+                                                    precedingBars += barIndex;
+                                                    const globalBarIdx = precedingBars;
+                                                    const globalStart = globalBarIdx * 16;
+                                                    const isCurrent = isPlaying && currentStep >= globalStart && currentStep < globalStart + 16;
 
-                                            {/* ⋮ Kebab menu */}
-                                            <div className="relative shrink-0">
-                                                <button
-                                                    onClick={(e) => { e.stopPropagation(); setOpenSegMenu(openSegMenu === segIndex ? null : segIndex); }}
-                                                    className="text-neutral-500 hover:text-white px-2 py-2 rounded hover:bg-neutral-700 transition-colors text-base leading-none"
-                                                    title="Segment options"
-                                                >⋮</button>
-                                                {openSegMenu === segIndex && (
-                                                    <div
-                                                        onClick={(e) => e.stopPropagation()}
-                                                        className="absolute right-0 top-full mt-1 w-36 bg-neutral-800 border border-neutral-600 rounded-lg shadow-2xl z-50 overflow-hidden">
-                                                        <button
-                                                            onClick={() => { deleteSegment(segIndex); setOpenSegMenu(null); }}
-                                                            className="w-full flex items-center gap-2 px-3 py-2 text-xs text-red-400 hover:bg-red-500/10 transition-colors text-left">
-                                                            <Trash2 size={12} /> Delete Segment
-                                                        </button>
-                                                    </div>
-                                                )}
+                                                    return (
+                                                        <div key={barIndex}
+                                                            draggable={true}
+                                                            onDragStart={(e) => {
+                                                                e.dataTransfer.setData("type", "bar");
+                                                                e.dataTransfer.setData("segIndex", segIndex);
+                                                                e.dataTransfer.setData("barIndex", barIndex);
+                                                            }}
+                                                            onDragOver={(e) => e.preventDefault()}
+                                                            onDrop={(e) => handleDropInSegment(e, segIndex, barIndex)}
+                                                            onClick={() => item && seekToBar(globalBarIdx)}
+                                                            className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group
+                                                                ${item ? 'border-transparent bg-neutral-800 hover:bg-neutral-700/60 cursor-pointer' : 'border-neutral-700/50 hover:border-neutral-600 hover:bg-neutral-800/20'}
+                                                                ${isCurrent ? 'ring-1 ring-emerald-500/50' : ''} cursor-grab active:cursor-grabbing`}>
+
+                                                            {/* Playback progress bar */}
+                                                            {isCurrent && (
+                                                                <div className="absolute top-0 left-0 bottom-0 bg-emerald-500/20 z-0 transition-all duration-75"
+                                                                    style={{ width: ((currentStep % 16) / 16) * 100 + "%" }} />
+                                                            )}
+
+                                                            {/* ── Corner X: always shown on hover, removes the slot ── */}
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); removeBar(segIndex, barIndex); }}
+                                                                className="absolute top-1 right-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity bg-neutral-900/70 hover:bg-red-600 text-neutral-400 hover:text-white rounded p-0.5"
+                                                                title="Remove bar slot">
+                                                                <X size={10} />
+                                                            </button>
+
+                                                            {item ? (
+                                                                <div className="relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-none px-4">
+                                                                    <span className="text-[11px] font-bold text-gray-200 truncate w-full text-center">{item.name}</span>
+                                                                    <div className="flex items-center gap-1 mt-0.5">
+                                                                        <span className={`text-[9px] ${item.type === 'fill' ? 'text-rose-400' : 'text-emerald-400'}`}>{item.type}</span>
+                                                                        {isCurrent && <span className="text-[8px] text-emerald-400 font-bold animate-pulse">▶ PLAYING</span>}
+                                                                        {!isCurrent && <span className="text-[8px] text-neutral-600">click to play</span>}
+                                                                    </div>
+                                                                </div>
+                                                            ) : (
+                                                                <span className="text-[10px] text-neutral-600 pointer-events-none">Drop Here</span>
+                                                            )}
+
+                                                            {/* Bar number bottom-left */}
+                                                            <div className="absolute bottom-1 left-1.5 text-[8px] font-mono text-neutral-700 font-bold z-10">B{barIndex + 1}</div>
+                                                        </div>
+                                                    );
+                                                })}
+
+                                                {/* Add bar */}
+                                                <button onClick={() => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, bars: [...s.bars, null] }))}
+                                                    className="h-7 border border-dashed border-neutral-700 text-neutral-600 rounded-md hover:bg-neutral-800 hover:text-white transition-all flex items-center justify-center text-xs">
+                                                    <Plus size={12} />
+                                                </button>
                                             </div>
                                         </div>
+                                    ))}
 
-                                        {/* Bars */}
-                                        <div className="bg-neutral-900/50 border border-t-0 border-neutral-800 rounded-b-lg p-2 flex flex-col gap-2 min-h-[80px]">
-                                            {segment.bars.map((barLibId, barIndex) => {
-                                                const item = library.find(l => l.id === barLibId);
+                                    {/* Add segment */}
+                                    <button onClick={() => setSegments(prev => [...prev, { id: `seg-${Date.now()}`, name: `Part ${prev.length + 1}`, bars: [null, null, null, null] }])}
+                                        className="w-12 h-10 bg-neutral-800 hover:bg-indigo-600 border border-neutral-700 rounded-lg text-white font-bold flex items-center justify-center transition-all overflow-hidden group shrink-0 hover:w-32">
+                                        <Plus size={16} className="shrink-0" />
+                                        <span className="text-xs ml-1.5 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto transition-all duration-300">Add Part</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
 
-                                                let precedingBars = 0;
-                                                for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
-                                                precedingBars += barIndex;
-                                                const globalBarIdx = precedingBars;
-                                                const globalStart = globalBarIdx * 16;
-                                                const isCurrent = isPlaying && currentStep >= globalStart && currentStep < globalStart + 16;
+                        {/* RIGHT: LYRIC PANEL */}
+                        <div className="w-80 bg-neutral-900 border-l border-neutral-800 flex flex-col shrink-0 overflow-hidden shadow-2xl relative z-10">
+                            <div className="bg-neutral-950 border-b border-neutral-800 px-5 flex items-center shrink-0 h-[45px]">
+                                <span className="text-xs text-slate-300 font-bold uppercase tracking-widest flex items-center gap-2">
+                                    <span className="text-lg">📝</span> Lyrics & Notes
+                                </span>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                                {segments.map((segment, segIndex) => {
+                                    let precedingBars = 0;
+                                    for (let i = 0; i < segIndex; i++) precedingBars += segments[i].bars.length;
+                                    const segmentStartStep = precedingBars * 16;
+                                    const segmentEndStep = segmentStartStep + (segment.bars.length * 16);
+                                    const isSegCurrent = isPlaying && currentStep >= segmentStartStep && currentStep < segmentEndStep;
 
-                                                return (
-                                                    <div key={barIndex}
-                                                        draggable={true}
-                                                        onDragStart={(e) => {
-                                                            e.dataTransfer.setData("type", "bar");
-                                                            e.dataTransfer.setData("segIndex", segIndex);
-                                                            e.dataTransfer.setData("barIndex", barIndex);
-                                                        }}
-                                                        onDragOver={(e) => e.preventDefault()}
-                                                        onDrop={(e) => handleDropInSegment(e, segIndex, barIndex)}
-                                                        onClick={() => item && seekToBar(globalBarIdx)}
-                                                        className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group
-                                                            ${item ? 'border-transparent bg-neutral-800 hover:bg-neutral-700/60 cursor-pointer' : 'border-neutral-700/50 hover:border-neutral-600 hover:bg-neutral-800/20'}
-                                                            ${isCurrent ? 'ring-1 ring-emerald-500/50' : ''} cursor-grab active:cursor-grabbing`}>
+                                    return (
+                                        <div key={segment.id} className={`bg-neutral-850 rounded-xl overflow-hidden flex flex-col shadow-lg transition-all border ${isSegCurrent ? 'border-indigo-500/50 shadow-indigo-500/10' : 'border-neutral-700'}`}>
+                                            {/* Card Header */}
+                                            <div className="px-4 py-2.5 bg-neutral-900 border-b border-neutral-800 flex justify-between items-center z-10">
+                                                <span className="text-sm font-bold text-gray-200">{segment.name}</span>
+                                                {isSegCurrent && <span className="text-[10px] text-indigo-400 font-bold uppercase tracking-widest animate-pulse">Running</span>}
+                                            </div>
 
-                                                        {/* Playback progress bar */}
-                                                        {isCurrent && (
-                                                            <div className="absolute top-0 left-0 bottom-0 bg-emerald-500/20 z-0 transition-all duration-75"
-                                                                style={{ width: `${((currentStep % 16) / 16) * 100}%` }} />
-                                                        )}
+                                            {/* Card Body - Bars/Grooves */}
+                                            <div className="flex flex-col bg-neutral-800/40 relative pb-1">
+                                                {segment.bars.map((barLibId, barIndex) => {
+                                                    const globalBarIdx = precedingBars + barIndex;
+                                                    const globalStart = globalBarIdx * 16;
+                                                    const globalEnd = globalStart + 16;
+                                                    const isBarCurrent = isPlaying && currentStep >= globalStart && currentStep < globalEnd;
+                                                    const rawProgress = isBarCurrent ? ((currentStep - globalStart) / 16) * 100 : (currentStep >= globalEnd ? 100 : 0);
+                                                    const progress = (!isPlaying && currentStep === -1) ? 0 : rawProgress;
 
-                                                        {/* ── Corner X: always shown on hover, removes the slot ── */}
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); removeBar(segIndex, barIndex); }}
-                                                            className="absolute top-1 right-1 z-30 opacity-0 group-hover:opacity-100 transition-opacity bg-neutral-900/70 hover:bg-red-600 text-neutral-400 hover:text-white rounded p-0.5"
-                                                            title="Remove bar slot">
-                                                            <X size={10} />
-                                                        </button>
+                                                    const item = barLibId ? library.find(l => l.id === barLibId) : null;
+                                                    const words = (segment.barLyrics && segment.barLyrics[barIndex]) || [];
 
-                                                        {item ? (
-                                                            <div className="relative z-10 flex flex-col items-center justify-center w-full h-full pointer-events-none px-4">
-                                                                <span className="text-[11px] font-bold text-gray-200 truncate w-full text-center">{item.name}</span>
-                                                                <div className="flex items-center gap-1 mt-0.5">
-                                                                    <span className={`text-[9px] ${item.type === 'fill' ? 'text-rose-400' : 'text-emerald-400'}`}>{item.type}</span>
-                                                                    {isCurrent && <span className="text-[8px] text-emerald-400 font-bold animate-pulse">▶ PLAYING</span>}
-                                                                    {!isCurrent && <span className="text-[8px] text-neutral-600">click to play</span>}
+                                                    return (
+                                                        <div key={barIndex} className={`p-3 relative border-b border-neutral-700/50 last:border-b-0 transition-colors ${isBarCurrent ? (item ? 'bg-emerald-900/10' : 'bg-neutral-800/60') : ''}`}>
+                                                            {item ? (
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                                        <span className={`shrink-0 text-[8px] uppercase font-bold px-1.5 py-0.5 rounded ${item.type === 'fill' ? 'bg-rose-500/20 text-rose-400' : item.type === 'manual' ? 'bg-indigo-500/20 text-indigo-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
+                                                                            {item.type}
+                                                                        </span>
+                                                                        <span className="text-xs font-medium text-gray-300 truncate" title={item.name}>{item.name}</span>
+                                                                    </div>
+                                                                    {isBarCurrent && <span className="shrink-0 text-[9px] text-emerald-400 font-bold animate-pulse ml-2">Playing</span>}
                                                                 </div>
+                                                            ) : (
+                                                                <div className="flex items-center justify-between mb-2">
+                                                                    <span className="text-[10px] text-neutral-600">Empty Bar {barIndex + 1}</span>
+                                                                    {isBarCurrent && <span className="shrink-0 text-[9px] text-neutral-400 font-bold animate-pulse ml-2">Playing</span>}
+                                                                </div>
+                                                            )}
+
+                                                            <div className="flex flex-col gap-2 relative z-10 mt-1">
+                                                                {words.length > 0 && (
+                                                                    <div className="flex flex-wrap gap-1">
+                                                                        {words.map((word, wi) => (
+                                                                            <span key={wi} className="px-2 py-0.5 bg-neutral-700 hover:bg-rose-500/80 text-gray-200 text-[10px] rounded cursor-pointer transition-colors shadow-sm border border-neutral-600/50"
+                                                                                onClick={() => {
+                                                                                    setSegments(prev => prev.map((s, i) => {
+                                                                                        if (i === segIndex) {
+                                                                                            const nextBarLyrics = { ...(s.barLyrics || {}) };
+                                                                                            nextBarLyrics[barIndex] = nextBarLyrics[barIndex].filter((_, idx) => idx !== wi);
+                                                                                            return { ...s, barLyrics: nextBarLyrics };
+                                                                                        }
+                                                                                        return s;
+                                                                                    }));
+                                                                                }}
+                                                                                title="Click to remove word">
+                                                                                {word}
+                                                                            </span>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+
+                                                                <input type="text"
+                                                                    placeholder={item ? `📝 Type lyrics for ${item.type}...` : `📝 Type lyrics for empty bar...`}
+                                                                    className="w-full bg-neutral-900/60 border border-neutral-700 rounded px-2.5 py-1.5 text-[11px] text-white focus:outline-none focus:border-indigo-500 focus:bg-neutral-900 transition-colors placeholder-neutral-500 shadow-inner"
+                                                                    onKeyDown={(e) => {
+                                                                        if (e.key === 'Enter') {
+                                                                            const text = e.target.value;
+                                                                            if (!text.trim()) return;
+                                                                            const segmenter = new Intl.Segmenter(['th', 'en'], { granularity: 'word' });
+                                                                            const newWords = Array.from(segmenter.segment(text)).filter(s => s.isWordLike).map(s => s.segment);
+                                                                            setSegments(prev => prev.map((s, i) => {
+                                                                                if (i === segIndex) {
+                                                                                    const nextBarLyrics = { ...(s.barLyrics || {}) };
+                                                                                    nextBarLyrics[barIndex] = [...(nextBarLyrics[barIndex] || []), ...newWords];
+                                                                                    return { ...s, barLyrics: nextBarLyrics };
+                                                                                }
+                                                                                return s;
+                                                                            }));
+                                                                            e.target.value = '';
+                                                                        }
+                                                                    }}
+                                                                />
                                                             </div>
-                                                        ) : (
-                                                            <span className="text-[10px] text-neutral-600 pointer-events-none">Drop Here</span>
-                                                        )}
 
-                                                        {/* Bar number bottom-left */}
-                                                        <div className="absolute bottom-1 left-1.5 text-[8px] font-mono text-neutral-700 font-bold z-10">B{barIndex + 1}</div>
-                                                    </div>
-                                                );
-                                            })}
-
-                                            {/* Add bar */}
-                                            <button onClick={() => setSegments(prev => prev.map((s, i) => i !== segIndex ? s : { ...s, bars: [...s.bars, null] }))}
-                                                className="h-7 border border-dashed border-neutral-700 text-neutral-600 rounded-md hover:bg-neutral-800 hover:text-white transition-all flex items-center justify-center text-xs">
-                                                <Plus size={12} />
-                                            </button>
+                                                            {/* Bottom Linear Progress Bar for this bar */}
+                                                            <div className={`absolute bottom-0 left-0 h-[2px] transition-opacity z-0 ${isBarCurrent ? 'opacity-100' : 'opacity-0'} ${item ? 'bg-emerald-500' : 'bg-neutral-500'}`} style={{ width: progress + "%", transitionDuration: '50ms' }} />
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
-
-                                {/* Add segment */}
-                                <button onClick={() => setSegments(prev => [...prev, { id: `seg-${Date.now()}`, name: `Part ${prev.length + 1}`, bars: [null, null, null, null] }])}
-                                    className="w-12 h-10 bg-neutral-800 hover:bg-indigo-600 border border-neutral-700 rounded-lg text-white font-bold flex items-center justify-center transition-all overflow-hidden group shrink-0 hover:w-32">
-                                    <Plus size={16} className="shrink-0" />
-                                    <span className="text-xs ml-1.5 w-0 overflow-hidden whitespace-nowrap group-hover:w-auto transition-all duration-300">Add Part</span>
-                                </button>
+                                    );
+                                })}
                             </div>
                         </div>
                     </div>

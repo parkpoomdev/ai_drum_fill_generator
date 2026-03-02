@@ -1,0 +1,41 @@
+# Multi-Bar Groove & Fill System
+
+Separating the "Normal Pattern" (Groove) and "Drum Fill" into distinct editors and a combined playback/export system.
+
+## Proposed Changes (Stacked Timeline Approach)
+
+### Terminology Updates
+To make the tool more unique and avoid overlap with other VSTi terminology (like Logic Pro's Drummer):
+- **Energy** (previously Intensity): Controls the dynamic volume and simplified velocity scaling of the hits.
+- **Density** (previously Complexity): Controls the number of notes and syncopation in the pattern.
+
+### UI Layout
+- **Stacked Timeline**: Show Measure 1 (Groove) and Measure 2 (Fill) vertically stacked.
+- **Shared Instrument Labels**: A common column for "Kick", "Snare", etc., to keep the layout clean.
+- **Measure Labels**: Clear "Measure 1: Base" and "Measure 2: Fill" headers.
+
+### Controls
+- **Dual Control Panels**: 
+  - Left Panel: Groove parameters (Genre, Energy, Density).
+  - Right Panel: Fill parameters (Energy, Density, Fill Amount).
+- **Link Toggle**: Button to sync Energy/Density between both measures for a consistent sound.
+
+### Playback System
+- **Playback Options**: 
+  - **Loop Base**: Play Measure 1 in a loop.
+  - **Loop Fill**: Play Measure 2 in a loop.
+  - **Full Sequence**: Play Bar 1, then Bar 2 (32 steps total).
+- The playback indicator will automatically adjust based on the selected mode.
+
+### Export System
+A new "Export Center" providing:
+- **Export Groove (1 Bar)**
+- **Export Fill (1 Bar)**
+- **Export Full (2 Bars)**
+
+## Verification Plan
+
+### Automated/Manual Testing
+- Verify that changes in **Measure 1** do not overwrite changes in **Measure 2** unless 'Link' is on.
+- Confirm "Full Sequence" playback loops correctly through 32 steps.
+- Test all 3 export modes to ensure valid MIDI files are generated for each choice.
