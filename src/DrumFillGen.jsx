@@ -1186,6 +1186,7 @@ const PianoRollBlock = ({
                       {/* Divider + Add New + Delete row */}
                       <div className="border-t border-neutral-700/60 pt-2 flex gap-2">
                         <button
+                          disabled={isRecording || isCountIn}
                           onClick={() => {
                             // Add a new chord right after this one
                             const newStart = Math.min(
@@ -1474,12 +1475,40 @@ const DrumFillGen = () => {
   const [fillAmount, setFillAmount] = useState(savedState?.fillAmount ?? 25);
 
   // ── Manual Pattern ──
+  const makeEmptyStep = () => ({
+    kick: 0,
+    snare: 0,
+    hihat: 0,
+    tomHigh: 0,
+    tomMid: 0,
+    tomLow: 0,
+    crash: 0,
+  });
+
+  const normalizeManual = (arr) =>
+    (arr ?? Array(16).fill(null)).map((s) => ({
+      ...makeEmptyStep(),
+      ...(s || {}),
+    }));
+
   const [manualPattern, setManualPattern] = useState(
-    savedState?.manualPattern ??
-    Array(16)
-      .fill(null)
-      .map(() => ({ kick: 0, snare: 0 })),
+    normalizeManual(savedState?.manualPattern),
   );
+
+  // ── Key preview (flash instrument rows when pressing keys anytime) ──
+  const [pressedKeys, setPressedKeys] = useState(new Set());
+
+  // ── REGEN seed (increment to force pattern regeneration) ──
+  const [regenSeed, setRegenSeed] = useState(0);
+
+  // ── Live recording ──
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordMode, setRecordMode] = useState(
+    savedState?.recordMode ?? "once",
+  ); // 'once' | 'loop'
+  const [recordWriteMode, setRecordWriteMode] = useState("merge"); // 'merge' | 'overwrite' | 'newtake'
+  const [isCountIn, setIsCountIn] = useState(false);
+  const [countInBeats, setCountInBeats] = useState(0);
 
   const defaultLib = [
     {
@@ -1555,6 +1584,16 @@ const DrumFillGen = () => {
   const nextNoteTimeRef = useRef(0);
   const currentStepRef = useRef(0);
   const timerIDRef = useRef(null);
+  const countInTimerRef = useRef(null);
+  const playheadTimerIdsRef = useRef([]);
+  const recordWriteModeRef = useRef("merge");
+  const isPlayingRef = useRef(false);
+  const lastScheduledStepRef = useRef(0);
+  const lastScheduledTimeRef = useRef(0);
+  const dragNoteRef = useRef({ active: false, instId: null, step: 0, moved: false, value: 1 });
+  // Keep refs in sync with state so callbacks can read current value without stale closure
+  recordWriteModeRef.current = recordWriteMode;
+  isPlayingRef.current = isPlaying;
 
   // Close segment kebab menu on outside click
   useEffect(() => {
@@ -1563,6 +1602,105 @@ const DrumFillGen = () => {
     window.addEventListener("click", close);
     return () => window.removeEventListener("click", close);
   }, [openSegMenu]);
+
+  const clearCountIn = useCallback(() => {
+    if (countInTimerRef.current) {
+      clearInterval(countInTimerRef.current);
+      countInTimerRef.current = null;
+    }
+    setIsCountIn(false);
+    setCountInBeats(0);
+  }, []);
+
+  const clearPlayheadTimers = useCallback(() => {
+    if (playheadTimerIdsRef.current.length === 0) return;
+    playheadTimerIdsRef.current.forEach((id) => clearTimeout(id));
+    playheadTimerIdsRef.current = [];
+  }, []);
+
+  const stopRecording = useCallback(() => {
+    clearCountIn();
+    setIsRecording(false);
+  }, [clearCountIn]);
+
+  const startRecording = useCallback(
+    (mode = recordMode) => {
+      // If already armed/recording, stop.
+      if (isRecording || isCountIn) {
+        stopRecording();
+        setIsPlaying(false);
+        return;
+      }
+      // Reset transport and arm
+      setRecordMode(mode);
+      setIsRecording(false);
+      setIsPlaying(false);
+      setCurrentStep(-1);
+      currentStepRef.current = 0;
+      // In overwrite mode, clear the manual grid before recording
+      if (recordWriteMode === "overwrite") {
+        setManualPattern(normalizeManual());
+      }
+      // In new take mode, erase everything — blank slate
+      if (recordWriteMode === "newtake") {
+        const blank = Array(16).fill(null).map(() => makeEmptyStep());
+        setManualPattern(blank);
+        setPattern(blank);
+      }
+      clearCountIn();
+      setIsCountIn(true);
+      setCountInBeats(4);
+      if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
+      if (audioCtxRef.current.state === "suspended")
+        audioCtxRef.current.resume();
+      // First upbeat click immediately (beat 4)
+      playSound(audioCtxRef.current, "metronome_high", audioCtxRef.current.currentTime, 1, genre);
+
+      const beatMs = (60 / bpm) * 1000;
+      countInTimerRef.current = setInterval(() => {
+        setCountInBeats((prev) => {
+          if (prev <= 1) {
+            clearCountIn();
+            setIsRecording(true);
+            setIsPlaying(true);
+            return 0;
+          }
+          // count-in metronome click each beat
+          if (audioCtxRef.current) {
+            const ctx = audioCtxRef.current;
+            const isFirst = prev === 4;
+            playSound(
+              ctx,
+              isFirst ? "metronome_high" : "metronome",
+              ctx.currentTime,
+              1,
+              genre,
+            );
+          }
+          return prev - 1;
+        });
+      }, beatMs);
+    },
+    [
+      bpm,
+      clearCountIn,
+      isCountIn,
+      isRecording,
+      recordMode,
+      recordWriteMode,
+      stopRecording,
+      genre,
+    ],
+  );
+
+  const handlePlayToggle = useCallback(() => {
+    if (isPlaying || isRecording || isCountIn) {
+      stopRecording();
+      setIsPlaying(false);
+    } else {
+      setIsPlaying(true);
+    }
+  }, [isPlaying, isRecording, isCountIn, stopRecording]);
 
   // ── Active pattern for playback ──
   const activePattern = useMemo(() => {
@@ -1605,6 +1743,7 @@ const DrumFillGen = () => {
       isDayTheme,
       isMetronomeEnabled,
       isGrooveLooping,
+      recordMode,
     };
     localStorage.setItem("drumFillGen_saveState", JSON.stringify(stateToSave));
   }, [
@@ -1621,9 +1760,13 @@ const DrumFillGen = () => {
     isDayTheme,
     isMetronomeEnabled,
     isGrooveLooping,
+    recordMode,
   ]);
 
-  // ── Regen when params change ──
+  // ── Regen when params change or REGEN button clicked ──
+  const manualPatternRef = useRef(manualPattern);
+  manualPatternRef.current = manualPattern;
+
   useEffect(() => {
     const genModeRaw = generatorMode === "manual" ? "groove" : generatorMode;
     const newPattern = generatePattern(
@@ -1635,12 +1778,21 @@ const DrumFillGen = () => {
     );
     if (generatorMode === "manual") {
       for (let i = 0; i < 16; i++) {
-        newPattern[i].kick = manualPattern[i].kick;
-        newPattern[i].snare = manualPattern[i].snare;
+        newPattern[i] = { ...newPattern[i], ...manualPatternRef.current[i] };
       }
     }
     setPattern(newPattern);
-  }, [genre, complexity, intensity, fillAmount, generatorMode, manualPattern]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [genre, complexity, intensity, fillAmount, generatorMode, regenSeed]);
+
+  // ── Apply manual overlay whenever manualPattern changes ──
+  useEffect(() => {
+    if (generatorMode === "manual") {
+      setPattern((prev) =>
+        prev.map((step, i) => ({ ...step, ...manualPattern[i] }))
+      );
+    }
+  }, [manualPattern, generatorMode]);
 
   // ── MIDI ──
   const generateMidiBlob = useCallback(() => {
@@ -1864,10 +2016,26 @@ const DrumFillGen = () => {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
+  const midiDragData = useMemo(() => {
+    const blob = generateMidiBlob();
+    return URL.createObjectURL(blob);
+  }, [generateMidiBlob]);
+
   // ── Playback engine ──
   const scheduleNote = useCallback(
     (step, time) => {
-      requestAnimationFrame(() => setCurrentStep(step));
+      const ctxNow = audioCtxRef.current?.currentTime ?? 0;
+      const delayMs = Math.max(0, (time - ctxNow) * 1000);
+      const playheadTimerId = setTimeout(() => {
+        requestAnimationFrame(() => setCurrentStep(step));
+        playheadTimerIdsRef.current = playheadTimerIdsRef.current.filter(
+          (id) => id !== playheadTimerId,
+        );
+      }, delayMs);
+      playheadTimerIdsRef.current.push(playheadTimerId);
+      // Keep an exact audio-clock anchor for record quantization.
+      lastScheduledStepRef.current = step;
+      lastScheduledTimeRef.current = time;
       const s = activePattern[step];
       if (!s) return;
       const ctx = audioCtxRef.current;
@@ -1880,7 +2048,8 @@ const DrumFillGen = () => {
       if (s.crash > 0) playSound(ctx, "crash", time, s.crash, genre);
 
       // Metronome logic
-      if (isMetronomeEnabled && step % 4 === 0) {
+      const metShouldClick = isMetronomeEnabled || isRecording;
+      if (metShouldClick && step % 4 === 0) {
         const isHigh = step % 16 === 0;
         playSound(ctx, isHigh ? "metronome_high" : "metronome", time, 1, genre);
       }
@@ -1999,6 +2168,7 @@ const DrumFillGen = () => {
 
   const scheduler = useCallback(() => {
     while (nextNoteTimeRef.current < audioCtxRef.current.currentTime + 0.1) {
+      const prevStep = currentStepRef.current;
       scheduleNote(currentStepRef.current, nextNoteTimeRef.current);
       nextNoteTimeRef.current += 60.0 / bpm / 4;
 
@@ -2069,8 +2239,21 @@ const DrumFillGen = () => {
         }
       } else {
         if (nextStep >= maxSteps) {
-          if (isGrooveLooping) {
+          if (isRecording && recordMode === "once") {
+            setIsRecording(false);
+            setIsPlaying(false);
+            return;
+          }
+          if (isGrooveLooping || isRecording) {
             nextStep = 0;
+            // NEW TAKE loop: erase everything at the start of each new pass
+            if (isRecording && recordMode === "loop" && recordWriteModeRef.current === "newtake") {
+              const blank = Array(16).fill(null).map(() => ({
+                kick: 0, snare: 0, hihat: 0, tomHigh: 0, tomMid: 0, tomLow: 0, crash: 0,
+              }));
+              setManualPattern(blank);
+              setPattern(blank);
+            }
           } else {
             setIsPlaying(false);
             return;
@@ -2079,6 +2262,10 @@ const DrumFillGen = () => {
       }
 
       currentStepRef.current = nextStep;
+      // At loop wrap, stop this cycle so step 1 has its full slot before step 2 is queued.
+      if (nextStep === 0 && prevStep !== 0) {
+        break;
+      }
     }
     timerIDRef.current = setTimeout(scheduler, 25);
   }, [
@@ -2088,11 +2275,14 @@ const DrumFillGen = () => {
     appMode,
     segments,
     isGrooveLooping,
+    isRecording,
+    recordMode,
     setIsPlaying,
   ]);
 
   useEffect(() => {
     if (isPlaying) {
+      clearPlayheadTimers();
       if (!audioCtxRef.current) {
         audioCtxRef.current = createAudioContext();
       }
@@ -2101,18 +2291,164 @@ const DrumFillGen = () => {
           instrument: "acoustic_grand_piano",
         });
       }
-      if (audioCtxRef.current.state === "suspended")
-        audioCtxRef.current.resume();
-      nextNoteTimeRef.current = audioCtxRef.current.currentTime;
-
-      scheduler();
+      const startWithLeadIn = () => {
+        // Small lead-in avoids dropping the very first note at transport start.
+        const startTime = audioCtxRef.current.currentTime + 0.03;
+        nextNoteTimeRef.current = startTime;
+        scheduler();
+      };
+      if (audioCtxRef.current.state === "suspended") {
+        audioCtxRef.current.resume().then(startWithLeadIn);
+      } else {
+        startWithLeadIn();
+      }
     } else {
       clearTimeout(timerIDRef.current);
+      clearPlayheadTimers();
       setCurrentStep(-1);
       currentStepRef.current = 0; // Rewind to beginning on STOP
     }
-    return () => clearTimeout(timerIDRef.current);
-  }, [isPlaying, scheduler, appMode]);
+    return () => {
+      clearTimeout(timerIDRef.current);
+      clearPlayheadTimers();
+    };
+  }, [isPlaying, scheduler, appMode, bpm, clearPlayheadTimers]);
+
+  useEffect(() => {
+    if (!isPlaying && isRecording) {
+      stopRecording();
+    }
+  }, [isPlaying, isRecording, stopRecording]);
+
+  useEffect(() => {
+    const keyMap = {
+      a: "kick",
+      s: "snare",
+      d: "hihat",
+      f: "tomMid",
+      g: "crash",
+    };
+
+    const onKeyDown = (e) => {
+      const inst = keyMap[e.key.toLowerCase()];
+      if (!inst) return;
+      e.preventDefault();
+      if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
+      if (audioCtxRef.current.state === "suspended")
+        audioCtxRef.current.resume();
+
+      // Always flash + play sound for preview
+      if (!e.repeat) {
+        setPressedKeys((prev) => new Set(prev).add(inst));
+        playSound(
+          audioCtxRef.current,
+          inst === "tomMid" ? "tomMid" : inst,
+          audioCtxRef.current.currentTime,
+          1,
+          genre,
+        );
+      }
+
+      // Record into manual grid only when recording
+      if (isRecording && !isCountIn && !e.repeat) {
+        if (!audioCtxRef.current) return;
+        const stepDuration = 60.0 / bpm / 4;
+        const timelineLen = Math.max(1, maxSteps);
+        const now = audioCtxRef.current.currentTime;
+        const deltaFromGrid = now - lastScheduledTimeRef.current;
+        // Snap to nearest 16th relative to the same grid clock used by metronome playback.
+        const snappedOffset = Math.round(deltaFromGrid / stepDuration);
+        const currentStepIdx =
+          (lastScheduledStepRef.current + snappedOffset + timelineLen) %
+          timelineLen;
+
+        if (appMode === "arrangement") {
+          const stepInBar = currentStepIdx % 16;
+          const barIndex = Math.floor(currentStepIdx / 16);
+
+          let pBars = 0;
+          let libIdToUpdate = null;
+
+          for (let i = 0; i < segments.length; i++) {
+            const seg = segments[i];
+            if (barIndex >= pBars && barIndex < pBars + seg.bars.length) {
+              libIdToUpdate = seg.bars[barIndex - pBars];
+              break;
+            }
+            pBars += seg.bars.length;
+          }
+
+          if (libIdToUpdate) {
+            setLibrary(prevLib => {
+              const newLib = [...prevLib];
+              const libItemIndex = newLib.findIndex(item => item.id === libIdToUpdate);
+              if (libItemIndex > -1) {
+                const newPattern = [...newLib[libItemIndex].pattern];
+                newPattern[stepInBar] = { ...newPattern[stepInBar], [inst]: 1 };
+                newLib[libItemIndex] = { ...newLib[libItemIndex], pattern: newPattern };
+              }
+              return newLib;
+            });
+          }
+        } else { // appMode === 'generator'
+          const stepIndex =
+            currentStepIdx % manualPattern.length;
+          setManualPattern((prev) => {
+            const next = [...prev];
+            next[stepIndex] = { ...next[stepIndex], [inst]: 1 };
+            return next;
+          });
+
+          setPattern((prev) => {
+            const next = [...prev];
+            if (!next[stepIndex]) return prev;
+            next[stepIndex] = { ...next[stepIndex], [inst]: 1 };
+            return next;
+          });
+        }
+      }
+    };
+
+    const onKeyUp = (e) => {
+      const inst = keyMap[e.key.toLowerCase()];
+      if (!inst) return;
+      setPressedKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(inst);
+        return next;
+      });
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    const onMouseUp = () => {
+      dragNoteRef.current = {
+        active: false,
+        instId: null,
+        step: 0,
+        moved: false,
+        value: 1,
+      };
+    };
+    window.addEventListener("mouseup", onMouseUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("mouseup", onMouseUp);
+    };
+  }, [
+    genre,
+    isRecording,
+    isCountIn,
+    appMode,
+    segments,
+    library,
+    manualPattern.length,
+    bpm,
+    maxSteps,
+  ]);
+
+  useEffect(() => () => clearCountIn(), [clearCountIn]);
 
   // ── Library helpers ──
   const saveToLibrary = () => {
@@ -2171,7 +2507,7 @@ const DrumFillGen = () => {
     setFillAmount(params.fillAmount);
     setGeneratorMode(params.generatorMode);
     if (libItem.manualPattern)
-      setManualPattern(libItem.manualPattern.map((s) => ({ ...s })));
+      setManualPattern(normalizeManual(libItem.manualPattern));
     setPattern([...libItem.pattern]);
     setEditingLibId(libItem.id);
     setAppMode("generator");
@@ -2549,7 +2885,7 @@ const DrumFillGen = () => {
                     if (parsed.fillAmount !== undefined)
                       setFillAmount(parsed.fillAmount);
                     if (parsed.manualPattern)
-                      setManualPattern(parsed.manualPattern);
+                      setManualPattern(normalizeManual(parsed.manualPattern));
                     if (parsed.pattern) setPattern(parsed.pattern);
                     if (parsed.library) setLibrary(parsed.library);
                     if (parsed.segments) setSegments(parsed.segments);
@@ -2591,6 +2927,7 @@ const DrumFillGen = () => {
                 isDayTheme,
                 isMetronomeEnabled,
                 isGrooveLooping,
+                recordMode,
               };
               const blob = new Blob([JSON.stringify(stateToSave, null, 2)], {
                 type: "application/json",
@@ -2606,16 +2943,21 @@ const DrumFillGen = () => {
             title="Save Project"
           >
             <Save size={14} /> SAVE
-          </button>
-          <button
-            onClick={exportMIDI}
-            className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-200 flex items-center gap-2 cursor-pointer transition-colors"
-            title="Download MIDI"
-          >
-            <Download size={14} /> EXPORT MIDI
-          </button>
-        </div>
+        </button>
+        <button
+          onClick={exportMIDI}
+          draggable
+          onDragStart={(e) => {
+            e.dataTransfer.setData("text/uri-list", midiDragData);
+            e.dataTransfer.setData("application/x-midi", midiDragData);
+          }}
+          className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-200 flex items-center gap-2 cursor-pointer transition-colors"
+          title="Download or drag MIDI to your DAW/desktop"
+        >
+          <Download size={14} /> EXPORT MIDI
+        </button>
       </div>
+    </div>
 
       {/* WORKSPACE */}
       <div className="flex-1 overflow-hidden flex">
@@ -2748,28 +3090,38 @@ const DrumFillGen = () => {
                       <div className="flex gap-2">
                         <button
                           onClick={() => {
-                            const genModeRaw =
-                              generatorMode === "manual"
-                                ? "groove"
-                                : generatorMode;
-                            const newPattern = generatePattern(
-                              genre,
-                              complexity,
-                              intensity,
-                              genModeRaw === "groove" ? 0 : fillAmount,
-                              genModeRaw,
+                            const genModeRaw = generatorMode === "manual" ? "groove" : generatorMode;
+                            const newPat = generatePattern(genre, complexity, intensity, genModeRaw === "groove" ? 0 : fillAmount, genModeRaw);
+                            // Preserve kick and snare positions from current pattern
+                            setPattern((prev) =>
+                              newPat.map((step, i) => ({
+                                ...step,
+                                kick: prev[i]?.kick ?? step.kick,
+                                snare: prev[i]?.snare ?? step.snare,
+                              }))
                             );
-                            if (generatorMode === "manual") {
-                              for (let i = 0; i < 16; i++) {
-                                newPattern[i].kick = manualPattern[i].kick;
-                                newPattern[i].snare = manualPattern[i].snare;
-                              }
-                            }
-                            setPattern(newPattern);
                           }}
-                          className="flex-1 py-2.5 bg-neutral-700 hover:bg-neutral-600 rounded-lg text-white font-bold flex items-center justify-center gap-2 border border-neutral-600 transition-colors text-sm"
+                          disabled={isRecording || isCountIn}
+                          className={`flex-1 py-2.5 rounded-lg text-white font-bold flex items-center justify-center gap-2 border border-neutral-600 transition-colors text-sm ${isRecording || isCountIn
+                            ? "bg-neutral-800 text-neutral-500 cursor-not-allowed"
+                            : "bg-neutral-700 hover:bg-neutral-600"
+                            }`}
                         >
                           <RefreshCw size={14} /> REGEN
+                        </button>
+                        <button
+                          onClick={() => {
+                            setManualPattern(normalizeManual());
+                            setRegenSeed((s) => s + 1);
+                          }}
+                          disabled={isRecording || isCountIn}
+                          className={`py-2.5 px-3 rounded-lg font-bold flex items-center justify-center gap-1.5 border transition-colors text-sm ${isRecording || isCountIn
+                            ? "bg-neutral-800 text-neutral-500 border-neutral-700 cursor-not-allowed"
+                            : "bg-neutral-700 hover:bg-red-600/30 text-red-400 border-red-500/30"
+                            }`}
+                          title="Clear all manual hits and reset the grid"
+                        >
+                          <Trash2 size={14} /> CLEAR
                         </button>
                         {editingLibId ? (
                           <div className="flex-1 flex gap-2">
@@ -2852,22 +3204,76 @@ const DrumFillGen = () => {
                     <h2 className="text-xs font-bold text-gray-500 uppercase tracking-widest">
                       Live Preview — 1 Bar
                     </h2>
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded ${generatorMode === "fill" && fillAmount > 0 ? "bg-rose-500/20 text-rose-400" : generatorMode === "manual" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
-                    >
-                      {generatorMode === "groove"
-                        ? "GROOVE"
-                        : generatorMode === "manual"
-                          ? "MANUAL ACTIVE"
-                          : fillAmount > 0
-                            ? "FILL ACTIVE"
-                            : "GROOVE"}
+                    <div className="flex items-center gap-2">
+                      <span
+                        className={`text-[10px] font-mono px-2 py-0.5 rounded ${generatorMode === "fill" && fillAmount > 0 ? "bg-rose-500/20 text-rose-400" : generatorMode === "manual" ? "bg-indigo-500/20 text-indigo-400" : "bg-emerald-500/20 text-emerald-400"}`}
+                      >
+                        {generatorMode === "groove"
+                          ? "GROOVE"
+                          : generatorMode === "manual"
+                            ? "MANUAL ACTIVE"
+                            : fillAmount > 0
+                              ? "FILL ACTIVE"
+                              : "GROOVE"}
+                      </span>
+                      {isCountIn && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-400/40 flex items-center gap-1">
+                          {[4, 3, 2, 1].map((n) => (
+                            <span
+                              key={n}
+                              className={`inline-block w-4 text-center rounded ${
+                                countInBeats === n
+                                  ? "bg-amber-400 text-black font-black scale-125"
+                                  : countInBeats < n
+                                    ? "text-amber-600/40"
+                                    : "text-amber-300"
+                              } transition-all`}
+                            >
+                              {n}
+                            </span>
+                          ))}
+                          <span className="text-amber-600">|</span>
+                        </span>
+                      )}
+                      {isRecording && !isCountIn && (
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-red-500/20 text-red-300 border border-red-400/40">
+                          REC ● {recordMode === "loop" ? "LOOP" : "ONCE"}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 mb-2 text-[10px] text-gray-400 font-mono">
+                    <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700">
+                      <span>Keys:</span>
+                      {[
+                        { key: "A", inst: "kick", label: "Kick", color: "bg-blue-500" },
+                        { key: "S", inst: "snare", label: "Snare", color: "bg-red-500" },
+                        { key: "D", inst: "hihat", label: "Hat", color: "bg-yellow-500" },
+                        { key: "F", inst: "tomMid", label: "Tom", color: "bg-orange-500" },
+                        { key: "G", inst: "crash", label: "Crash", color: "bg-purple-500" },
+                      ].map(({ key, inst, label, color }) => (
+                        <span
+                          key={key}
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-all duration-75 ${
+                            pressedKeys.has(inst)
+                              ? `${color} text-white font-bold scale-110 shadow-lg`
+                              : "bg-neutral-700 text-gray-400"
+                          }`}
+                        >
+                          <kbd className="font-bold">{key}</kbd>=<span>{label}</span>
+                        </span>
+                      ))}
+                    </div>
+                    <span className="px-2 py-0.5 rounded bg-neutral-800 border border-neutral-700">
+                      Press keys anytime to preview • Recording captures to grid
                     </span>
                   </div>
 
-                  {/* Beat numbers */}
-                  <div className="flex items-center mb-1">
-                    <div className="w-20 shrink-0" />
+                  {/* Beat ruler */}
+                  <div className="flex items-center mb-2 text-[9px] font-mono text-gray-500 uppercase tracking-wider">
+                    <div className="w-24 shrink-0 text-right pr-3 text-gray-600">
+                      Step Grid
+                    </div>
                     <div
                       className="flex-1 grid gap-px"
                       style={{ gridTemplateColumns: "repeat(16, 1fr)" }}
@@ -2877,103 +3283,255 @@ const DrumFillGen = () => {
                         .map((_, i) => (
                           <div
                             key={i}
-                            className="text-[9px] text-center font-mono font-bold"
-                            style={{
-                              color: i % 4 === 0 ? "#10b981" : "transparent",
-                            }}
+                            className={`flex items-center justify-center h-6 rounded-sm ${i % 4 === 0 ? "bg-emerald-500/10 text-emerald-300" : "bg-neutral-800/70 text-neutral-700"}`}
                           >
-                            {i % 4 === 0 ? i / 4 + 1 : "."}
+                            {i % 4 === 0 ? i / 4 + 1 : ""}
                           </div>
                         ))}
                     </div>
                   </div>
 
-                  {/* Instrument rows — REDUCED HEIGHT */}
-                  <div className="flex flex-col gap-px">
-                    {instruments.map((inst) => (
-                      <div
-                        key={inst.id}
-                        className="flex items-center"
-                        style={{ height: "22px" }}
-                      >
-                        <div className="w-20 shrink-0 text-right pr-3 text-[9px] font-bold text-gray-500 uppercase tracking-wider font-mono">
-                          {inst.label}
-                        </div>
+                  {/* Instrument rows — manual friendly */}
+                  <div className="flex flex-col gap-1">
+                    {instruments.map((inst) => {
+                      const isKeyPressed = pressedKeys.has(inst.id);
+                      const keyLegend = [
+                        { key: "A", inst: "kick" },
+                        { key: "S", inst: "snare" },
+                        { key: "D", inst: "hihat" },
+                        { key: "F", inst: "tomMid" },
+                        { key: "G", inst: "crash" },
+                      ].find((k) => k.inst === inst.id);
+                      return (
                         <div
-                          className="flex-1 grid gap-px h-full bg-neutral-900 rounded-sm border border-white/5"
-                          style={{ gridTemplateColumns: "repeat(16, 1fr)" }}
+                          key={inst.id}
+                          className={`flex items-center h-8 rounded-md transition-all duration-75 ${isKeyPressed ? "ring-1 ring-white/30 bg-neutral-800/70" : "bg-neutral-900"}`}
                         >
-                          {pattern.map((step, si) => {
-                            const val = step[inst.id] || 0;
-                            const isActive = val > 0;
-                            const isCurrent = currentStep === si && isPlaying;
-                            return (
-                              <div
-                                key={si}
-                                className={`relative flex items-center justify-center ${si % 4 === 0 ? "border-l border-white/10" : ""}`}
-                                style={{
-                                  backgroundColor: isCurrent
-                                    ? "#2a2a2a"
-                                    : generatorMode === "fill" &&
-                                      si >=
-                                      16 -
-                                      Math.floor((fillAmount / 100) * 16)
-                                      ? "#1e1515"
-                                      : "#111",
-                                }}
-                              >
-                                {!isActive && (
-                                  <div className="w-0.5 h-0.5 bg-neutral-700 rounded-full opacity-40" />
-                                )}
-                                {isActive && (
-                                  <div
-                                    className={`absolute inset-[1px] rounded-[1px] ${inst.color}`}
-                                    style={{
-                                      opacity: 0.75 + val * 0.25,
-                                      filter: isCurrent
-                                        ? "brightness(1.6)"
-                                        : "none",
-                                    }}
-                                  >
+                          <div className="w-24 shrink-0 flex items-center justify-end pr-3 gap-1 text-[10px] font-bold uppercase tracking-wider font-mono text-gray-500">
+                            {keyLegend && (
+                              <span className="px-1 py-[2px] rounded bg-neutral-700 text-white">
+                                {keyLegend.key}
+                              </span>
+                            )}
+                            <span className={`${isKeyPressed ? "text-white" : "text-gray-400"}`}>
+                              {inst.label}
+                            </span>
+                          </div>
+                          <div
+                            className="flex-1 grid gap-px h-full bg-neutral-900 rounded-sm border border-white/5 overflow-hidden"
+                            style={{ gridTemplateColumns: "repeat(16, 1fr)" }}
+                          >
+                            {pattern.map((step, si) => {
+                              const val = step[inst.id] || 0;
+                              const isActive = val > 0;
+                              const isCurrent = currentStep === si && isPlaying;
+                              const inFillTail =
+                                generatorMode === "fill" &&
+                                si >= 16 - Math.floor((fillAmount / 100) * 16);
+                              return (
+                                <div
+                                  key={si}
+                                  className={`relative flex items-center justify-center ${si % 4 === 0 ? "border-l border-white/10" : ""}`}
+                                  style={{
+                                    background:
+                                      isCurrent && isRecording
+                                        ? "linear-gradient(180deg, rgba(255,0,64,0.35), rgba(34,34,34,0.9))"
+                                        : isCurrent
+                                          ? "#1f2937"
+                                          : inFillTail
+                                            ? "#1a1111"
+                                            : "#0f0f0f",
+                                  }}
+                                >
+                                  {/* subtle step dot */}
+                                  {!isActive && (
+                                    <div className="w-1 h-1 bg-neutral-700 rounded-full opacity-40" />
+                                  )}
+                                  {isActive && (
                                     <div
-                                      className="absolute bottom-0 left-0 right-0 bg-black/30"
-                                      style={{ height: `${(1 - val) * 100}%` }}
-                                    />
-                                  </div>
-                                )}
-                                {generatorMode === "manual" &&
-                                  (inst.id === "kick" ||
-                                    inst.id === "snare") && (
+                                      className={`absolute inset-[1px] rounded-[2px] ${inst.color}`}
+                                      style={{
+                                        opacity: 0.75 + val * 0.25,
+                                        boxShadow: isCurrent
+                                          ? "0 0 12px rgba(255,255,255,0.25)"
+                                          : "none",
+                                      }}
+                                    >
+                                      <div
+                                        className="absolute bottom-0 left-0 right-0 bg-black/30"
+                                        style={{ height: `${(1 - val) * 100}%` }}
+                                      />
+                                    </div>
+                                  )}
+                                  {generatorMode === "manual" && (
                                     <div
-                                      className="absolute inset-0 cursor-pointer hover:bg-white/20 transition-colors z-20"
-                                      onClick={() => {
-                                        const currentVal =
-                                          manualPattern[si][inst.id];
-                                        const newVal = currentVal > 0 ? 0 : 1;
+                                      className="absolute inset-0 cursor-pointer hover:bg-white/10 transition-colors z-20"
+                                      title="Click to toggle or drag to move"
+                                      onMouseDown={(e) => {
+                                        e.preventDefault();
+                                        const currentVal = manualPattern[si][inst.id] || 0;
+                                        if (currentVal > 0) {
+                                          dragNoteRef.current = {
+                                            active: true,
+                                            instId: inst.id,
+                                            step: si,
+                                            moved: false,
+                                            value: currentVal,
+                                          };
+                                        } else {
+                                          // paint new note
+                                          const newVal = 1;
+                                          setManualPattern((prev) => {
+                                            const next = [...prev];
+                                            next[si] = {
+                                              ...next[si],
+                                              [inst.id]: newVal,
+                                            };
+                                            return next;
+                                          });
+                                          setPattern((prev) => {
+                                            const next = [...prev];
+                                            if (!next[si]) return prev;
+                                            next[si] = { ...next[si], [inst.id]: newVal };
+                                            return next;
+                                          });
+                                          if (!audioCtxRef.current)
+                                            audioCtxRef.current = createAudioContext();
+                                          if (audioCtxRef.current.state === "suspended")
+                                            audioCtxRef.current.resume();
+                                          playSound(
+                                            audioCtxRef.current,
+                                            inst.id,
+                                            audioCtxRef.current.currentTime,
+                                            1,
+                                            genre,
+                                          );
+                                        }
+                                      }}
+                                      onMouseEnter={() => {
+                                        const drag = dragNoteRef.current;
+                                        if (!drag.active) return;
+                                        if (drag.instId === inst.id && drag.step === si) return;
+                                        drag.moved = true;
                                         setManualPattern((prev) => {
                                           const next = [...prev];
-                                          next[si] = {
-                                            ...next[si],
-                                            [inst.id]: newVal,
-                                          };
+                                          // clear origin
+                                          next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
+                                          // set new
+                                          next[si] = { ...next[si], [inst.id]: drag.value };
+                                          drag.instId = inst.id;
+                                          drag.step = si;
+                                          return next;
+                                        });
+                                        setPattern((prev) => {
+                                          const next = [...prev];
+                                          if (next[drag.step]) {
+                                            next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
+                                          }
+                                          if (next[si]) {
+                                            next[si] = { ...next[si], [inst.id]: drag.value };
+                                          }
                                           return next;
                                         });
                                       }}
+                                      onMouseUp={() => {
+                                        const drag = dragNoteRef.current;
+                                        if (!drag.active) return;
+                                        if (!drag.moved) {
+                                          // treat as toggle off
+                                          setManualPattern((prev) => {
+                                            const next = [...prev];
+                                            next[drag.step] = {
+                                              ...next[drag.step],
+                                              [drag.instId]: 0,
+                                            };
+                                            return next;
+                                          });
+                                          setPattern((prev) => {
+                                            const next = [...prev];
+                                            if (next[drag.step]) {
+                                              next[drag.step] = {
+                                                ...next[drag.step],
+                                                [drag.instId]: 0,
+                                              };
+                                            }
+                                            return next;
+                                          });
+                                        }
+                                        dragNoteRef.current = {
+                                          active: false,
+                                          instId: null,
+                                          step: 0,
+                                          moved: false,
+                                          value: 1,
+                                        };
+                                      }}
                                     />
                                   )}
-                              </div>
-                            );
-                          })}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
 
                 {/* ── CENTERED PLAY BUTTON ── */}
-                <div className="flex items-center justify-center py-2 gap-3">
+                <div className="flex items-center justify-center py-2 gap-3 flex-wrap">
+                  {generatorMode === "manual" && (
+                    <>
+                      <button
+                        onClick={() => startRecording(recordMode)}
+                        className={`flex items-center gap-2 px-5 py-3 rounded-full font-bold text-sm transition-all border ${isRecording || isCountIn
+                          ? "bg-red-600 text-white border-red-400 shadow-red-500/30"
+                          : "bg-neutral-800 text-red-300 border-red-500/30 hover:bg-neutral-700"
+                          }`}
+                        title="Count-in then capture keyboard hits to the manual grid"
+                      >
+                        {isRecording || isCountIn ? (
+                          <>
+                            <StopCircle size={16} />
+                            STOP REC
+                          </>
+                        ) : (
+                          <>
+                            <Activity size={16} />
+                            RECORD
+                          </>
+                        )}
+                      </button>
+                      <button
+                        onClick={() =>
+                          setRecordMode((m) => (m === "once" ? "loop" : "once"))
+                        }
+                        className={`h-12 px-3 rounded-full border text-xs font-bold transition-all ${recordMode === "loop"
+                          ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200"
+                          : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:text-white"
+                          }`}
+                        title="Toggle between single-bar capture and continuous loop"
+                      >
+                        {recordMode === "loop" ? "LOOP" : "ONCE"}
+                      </button>
+                      <button
+                        onClick={() =>
+                          setRecordWriteMode((m) => m === "merge" ? "overwrite" : m === "overwrite" ? "newtake" : "merge")
+                        }
+                        className={`h-12 px-3 rounded-full border text-xs font-bold transition-all ${recordWriteMode === "overwrite"
+                          ? "bg-rose-500/20 border-rose-500/40 text-rose-200"
+                          : recordWriteMode === "newtake"
+                            ? "bg-sky-500/20 border-sky-500/40 text-sky-200"
+                            : "bg-amber-500/20 border-amber-500/40 text-amber-200"
+                          }`}
+                        title={recordWriteMode === "merge" ? "MERGE: New hits layer on top of existing pattern" : recordWriteMode === "overwrite" ? "OVERWRITE: Clear manual hits before recording" : "NEW TAKE: Clear everything and regenerate fresh AI base"}
+                      >
+                        {recordWriteMode === "merge" ? "MERGE" : recordWriteMode === "overwrite" ? "OVERWRITE" : "NEW TAKE"}
+                      </button>
+                    </>
+                  )}
                   <button
-                    onClick={() => setIsPlaying(!isPlaying)}
+                    onClick={handlePlayToggle}
                     className={`flex items-center gap-3 px-10 py-3 rounded-full font-bold text-lg shadow-2xl transition-all active:scale-95 ${isPlaying ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/30" : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30"}`}
                   >
                     {isPlaying ? (
@@ -3019,7 +3577,7 @@ const DrumFillGen = () => {
                 </span>
                 <div className="flex-1" />
                 <button
-                  onClick={() => setIsPlaying(!isPlaying)}
+                  onClick={handlePlayToggle}
                   className={`px-5 py-1.5 rounded-lg font-bold flex items-center gap-2 transition-all text-sm ${isPlaying ? "bg-red-500 hover:bg-red-600 text-white" : "bg-emerald-500 hover:bg-emerald-600 text-white"}`}
                 >
                   {isPlaying ? (
