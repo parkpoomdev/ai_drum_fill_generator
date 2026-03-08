@@ -1591,9 +1591,9 @@ const DrumFillGen = () => {
   const lastScheduledStepRef = useRef(0);
   const lastScheduledTimeRef = useRef(0);
   const dragNoteRef = useRef({ active: false, instId: null, step: 0, moved: false, value: 1 });
+  const isPaintingRef = useRef(false);
   // Keep refs in sync with state so callbacks can read current value without stale closure
   recordWriteModeRef.current = recordWriteMode;
-  isPlayingRef.current = isPlaying;
 
   // Close segment kebab menu on outside click
   useEffect(() => {
@@ -1694,13 +1694,25 @@ const DrumFillGen = () => {
   );
 
   const handlePlayToggle = useCallback(() => {
+    const resetTransport = () => {
+      isPlayingRef.current = false;
+      clearPlayheadTimers();
+      currentStepRef.current = 0;
+      lastScheduledStepRef.current = -1;
+      startTimeRef.current = 0;
+      setCurrentStep(-1);
+    };
+
     if (isPlaying || isRecording || isCountIn) {
       stopRecording();
+      resetTransport();
       setIsPlaying(false);
     } else {
+      // Force a clean restart so PLAY always begins from step 1.
+      resetTransport();
       setIsPlaying(true);
     }
-  }, [isPlaying, isRecording, isCountIn, stopRecording]);
+  }, [isPlaying, isRecording, isCountIn, stopRecording, clearPlayheadTimers]);
 
   // ── Active pattern for playback ──
   const activePattern = useMemo(() => {
@@ -1793,6 +1805,22 @@ const DrumFillGen = () => {
       );
     }
   }, [manualPattern, generatorMode]);
+
+  const applyManualHit = useCallback((stepIndex, instId, value = 1) => {
+    setManualPattern((prev) => {
+      if (!prev[stepIndex]) return prev;
+      const next = [...prev];
+      next[stepIndex] = { ...next[stepIndex], [instId]: value };
+      return next;
+    });
+
+    setPattern((prev) => {
+      if (!prev[stepIndex]) return prev;
+      const next = [...prev];
+      next[stepIndex] = { ...next[stepIndex], [instId]: value };
+      return next;
+    });
+  }, []);
 
   // ── MIDI ──
   const generateMidiBlob = useCallback(() => {
@@ -2166,153 +2194,76 @@ const DrumFillGen = () => {
     [activePattern, genre, isMetronomeEnabled, appMode, segments, bpm],
   );
 
-  const scheduler = useCallback(() => {
-    while (nextNoteTimeRef.current < audioCtxRef.current.currentTime + 0.1) {
-      const prevStep = currentStepRef.current;
-      scheduleNote(currentStepRef.current, nextNoteTimeRef.current);
-      nextNoteTimeRef.current += 60.0 / bpm / 4;
-
-      let nextStep = currentStepRef.current + 1;
-
-      if (appMode === "arrangement") {
-        // Determine current segment and bar bounds
-        let segStartStep = 0;
-        let segEndStep = 0;
-        let currentSeg = null;
-        let barStartStep = 0;
-        let barEndStep = 0;
-        let currentBarIdx = -1;
-
-        let pBars = 0;
-        for (let i = 0; i < segments.length; i++) {
-          const segLen = segments[i].bars.length * 16;
-          if (
-            currentStepRef.current >= pBars * 16 &&
-            currentStepRef.current < (pBars + segments[i].bars.length) * 16
-          ) {
-            currentSeg = segments[i];
-            segStartStep = pBars * 16;
-            segEndStep = segStartStep + segLen;
-            currentBarIdx = Math.floor(
-              (currentStepRef.current - segStartStep) / 16,
-            );
-            barStartStep = segStartStep + currentBarIdx * 16;
-            barEndStep = barStartStep + 16;
-            break;
-          }
-          pBars += segments[i].bars.length;
-        }
-
-        if (currentSeg && nextStep === barEndStep) {
-          // Check per-bar playback mode first: 'loop' | 'next' | 'stop'
-          const barMode =
-            currentSeg.barPlayModes && currentSeg.barPlayModes[currentBarIdx]
-              ? currentSeg.barPlayModes[currentBarIdx]
-              : "next";
-
-          if (barMode === "loop") {
-            // Stay on this groove bar — loop it
-            nextStep = barStartStep;
-          } else if (barMode === "stop") {
-            // Stop playback after this groove bar finishes
-            setIsPlaying(false);
-            return;
-          } else {
-            // barMode === 'next' — advance normally
-            if (nextStep === segEndStep) {
-              // Reached end of segment — check segment mode
-              const segMode = currentSeg.playbackMode || "next";
-              if (segMode === "loop") {
-                nextStep = segStartStep;
-              } else if (segMode === "stop") {
-                setIsPlaying(false);
-                return;
-              } else {
-                if (nextStep >= maxSteps) nextStep = 0;
-              }
-            } else if (nextStep >= maxSteps) {
-              nextStep = 0;
-            }
-          }
-        } else if (nextStep >= maxSteps) {
-          nextStep = 0;
-        }
-      } else {
-        if (nextStep >= maxSteps) {
-          if (isRecording && recordMode === "once") {
-            setIsRecording(false);
-            setIsPlaying(false);
-            return;
-          }
-          if (isGrooveLooping || isRecording) {
-            nextStep = 0;
-            // NEW TAKE loop: erase everything at the start of each new pass
-            if (isRecording && recordMode === "loop" && recordWriteModeRef.current === "newtake") {
-              const blank = Array(16).fill(null).map(() => ({
-                kick: 0, snare: 0, hihat: 0, tomHigh: 0, tomMid: 0, tomLow: 0, crash: 0,
-              }));
-              setManualPattern(blank);
-              setPattern(blank);
-            }
-          } else {
-            setIsPlaying(false);
-            return;
-          }
-        }
-      }
-
-      currentStepRef.current = nextStep;
-      // At loop wrap, stop this cycle so step 1 has its full slot before step 2 is queued.
-      if (nextStep === 0 && prevStep !== 0) {
-        break;
-      }
-    }
-    timerIDRef.current = setTimeout(scheduler, 25);
-  }, [
-    scheduleNote,
-    bpm,
-    maxSteps,
-    appMode,
-    segments,
-    isGrooveLooping,
-    isRecording,
-    recordMode,
-    setIsPlaying,
-  ]);
-
+  const startTimeRef = useRef(0);
   useEffect(() => {
+    let animationFrameId;
+
+    const tick = () => {
+      if (!isPlayingRef.current) return;
+
+      const stepDuration = 60.0 / bpm / 4.0;
+      const elapsedTime = audioCtxRef.current.currentTime - startTimeRef.current;
+      const currentAbsoluteStep = Math.floor(elapsedTime / stepDuration);
+
+      if (currentAbsoluteStep > lastScheduledStepRef.current) {
+        const stepToSchedule = currentAbsoluteStep % maxSteps;
+        const timeToSchedule = startTimeRef.current + (currentAbsoluteStep * stepDuration);
+        scheduleNote(stepToSchedule, timeToSchedule);
+        lastScheduledStepRef.current = currentAbsoluteStep;
+        currentStepRef.current = stepToSchedule;
+      }
+
+      animationFrameId = requestAnimationFrame(tick);
+    };
+
     if (isPlaying) {
-      clearPlayheadTimers();
-      if (!audioCtxRef.current) {
-        audioCtxRef.current = createAudioContext();
-      }
-      if (!pianoRef.current) {
-        pianoRef.current = new Soundfont(audioCtxRef.current, {
-          instrument: "acoustic_grand_piano",
-        });
-      }
-      const startWithLeadIn = () => {
-        // Small lead-in avoids dropping the very first note at transport start.
-        const startTime = audioCtxRef.current.currentTime + 0.03;
-        nextNoteTimeRef.current = startTime;
-        scheduler();
-      };
-      if (audioCtxRef.current.state === "suspended") {
-        audioCtxRef.current.resume().then(startWithLeadIn);
+      if (!isPlayingRef.current) { // Only setup on transition from !playing -> playing
+        if (!audioCtxRef.current) {
+          audioCtxRef.current = createAudioContext();
+        }
+        
+        const setupAndStart = () => {
+          if (!pianoRef.current) {
+             pianoRef.current = new Soundfont(audioCtxRef.current, {
+               instrument: "acoustic_grand_piano",
+             });
+          }
+          clearPlayheadTimers();
+          currentStepRef.current = 0;
+          lastScheduledStepRef.current = -1;
+          startTimeRef.current = audioCtxRef.current.currentTime + 0.1; // 100ms lead-in
+          isPlayingRef.current = true;
+          animationFrameId = requestAnimationFrame(tick);
+        }
+
+        if (audioCtxRef.current.state === "suspended") {
+          audioCtxRef.current.resume().then(setupAndStart);
+        } else {
+          setupAndStart();
+        }
       } else {
-        startWithLeadIn();
+        // Already playing, just ensure the loop continues (e.g. after a re-render)
+        isPlayingRef.current = true; // ensure it's set
+        cancelAnimationFrame(animationFrameId); // cancel previous frame request
+        animationFrameId = requestAnimationFrame(tick); // start a new one
       }
     } else {
-      clearTimeout(timerIDRef.current);
+      isPlayingRef.current = false;
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
       clearPlayheadTimers();
       setCurrentStep(-1);
-      currentStepRef.current = 0; // Rewind to beginning on STOP
+      currentStepRef.current = 0;
     }
+
     return () => {
-      clearTimeout(timerIDRef.current);
+      if (animationFrameId) {
+        cancelAnimationFrame(animationFrameId);
+      }
       clearPlayheadTimers();
     };
-  }, [isPlaying, scheduler, appMode, bpm, clearPlayheadTimers]);
+  }, [isPlaying, bpm, maxSteps, scheduleNote, clearPlayheadTimers]);
 
   useEffect(() => {
     if (!isPlaying && isRecording) {
@@ -2351,16 +2302,18 @@ const DrumFillGen = () => {
 
       // Record into manual grid only when recording
       if (isRecording && !isCountIn && !e.repeat) {
-        if (!audioCtxRef.current) return;
-        const stepDuration = 60.0 / bpm / 4;
         const timelineLen = Math.max(1, maxSteps);
-        const now = audioCtxRef.current.currentTime;
-        const deltaFromGrid = now - lastScheduledTimeRef.current;
-        // Snap to nearest 16th relative to the same grid clock used by metronome playback.
-        const snappedOffset = Math.round(deltaFromGrid / stepDuration);
-        const currentStepIdx =
-          (lastScheduledStepRef.current + snappedOffset + timelineLen) %
-          timelineLen;
+        let currentStepIdx = ((currentStepRef.current % timelineLen) + timelineLen) % timelineLen;
+
+        if (audioCtxRef.current && startTimeRef.current) {
+          const stepDuration = 60.0 / bpm / 4;
+          const now = audioCtxRef.current.currentTime;
+          // Quantize based on absolute time from the start of playback.
+          const elapsedTime = now - startTimeRef.current;
+          const snappedStep = Math.round(elapsedTime / stepDuration);
+          currentStepIdx = (snappedStep % timelineLen + timelineLen) % timelineLen;
+        }
+
 
         if (appMode === "arrangement") {
           const stepInBar = currentStepIdx % 16;
@@ -2391,20 +2344,8 @@ const DrumFillGen = () => {
             });
           }
         } else { // appMode === 'generator'
-          const stepIndex =
-            currentStepIdx % manualPattern.length;
-          setManualPattern((prev) => {
-            const next = [...prev];
-            next[stepIndex] = { ...next[stepIndex], [inst]: 1 };
-            return next;
-          });
-
-          setPattern((prev) => {
-            const next = [...prev];
-            if (!next[stepIndex]) return prev;
-            next[stepIndex] = { ...next[stepIndex], [inst]: 1 };
-            return next;
-          });
+          const stepIndex = currentStepIdx % manualPattern.length;
+          applyManualHit(stepIndex, inst, 1);
         }
       }
     };
@@ -2429,6 +2370,7 @@ const DrumFillGen = () => {
         moved: false,
         value: 1,
       };
+      isPaintingRef.current = false;
     };
     window.addEventListener("mouseup", onMouseUp);
     return () => {
@@ -2444,6 +2386,7 @@ const DrumFillGen = () => {
     segments,
     library,
     manualPattern.length,
+    applyManualHit,
     bpm,
     maxSteps,
   ]);
@@ -3322,7 +3265,10 @@ const DrumFillGen = () => {
                             style={{ gridTemplateColumns: "repeat(16, 1fr)" }}
                           >
                             {pattern.map((step, si) => {
-                              const val = step[inst.id] || 0;
+                              const val =
+                                generatorMode === "manual"
+                                  ? manualPattern[si]?.[inst.id] || 0
+                                  : step[inst.id] || 0;
                               const isActive = val > 0;
                               const isCurrent = currentStep === si && isPlaying;
                               const inFillTail =
@@ -3366,11 +3312,12 @@ const DrumFillGen = () => {
                                   {generatorMode === "manual" && (
                                     <div
                                       className="absolute inset-0 cursor-pointer hover:bg-white/10 transition-colors z-20"
-                                      title="Click to toggle or drag to move"
+                                      title="Click to toggle or drag to paint"
                                       onMouseDown={(e) => {
                                         e.preventDefault();
                                         const currentVal = manualPattern[si][inst.id] || 0;
                                         if (currentVal > 0) {
+                                          // Existing note: Start drag-move or toggle-off logic
                                           dragNoteRef.current = {
                                             active: true,
                                             instId: inst.id,
@@ -3379,7 +3326,8 @@ const DrumFillGen = () => {
                                             value: currentVal,
                                           };
                                         } else {
-                                          // paint new note
+                                          // Empty cell: Start painting
+                                          isPaintingRef.current = true;
                                           const newVal = 1;
                                           setManualPattern((prev) => {
                                             const next = [...prev];
@@ -3409,36 +3357,58 @@ const DrumFillGen = () => {
                                         }
                                       }}
                                       onMouseEnter={() => {
-                                        const drag = dragNoteRef.current;
-                                        if (!drag.active) return;
-                                        if (drag.instId === inst.id && drag.step === si) return;
-                                        drag.moved = true;
-                                        setManualPattern((prev) => {
-                                          const next = [...prev];
-                                          // clear origin
-                                          next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
-                                          // set new
-                                          next[si] = { ...next[si], [inst.id]: drag.value };
-                                          drag.instId = inst.id;
-                                          drag.step = si;
-                                          return next;
-                                        });
-                                        setPattern((prev) => {
-                                          const next = [...prev];
-                                          if (next[drag.step]) {
-                                            next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
-                                          }
-                                          if (next[si]) {
-                                            next[si] = { ...next[si], [inst.id]: drag.value };
-                                          }
-                                          return next;
-                                        });
+                                        if (isPaintingRef.current) {
+                                          // Paint mode: add note if cell is empty
+                                          const currentVal = manualPattern[si][inst.id] || 0;
+                                          if (currentVal > 0) return; // Don't overwrite existing notes while painting
+                                          const newVal = 1;
+                                           setManualPattern((prev) => {
+                                            const next = [...prev];
+                                            next[si] = {
+                                              ...next[si],
+                                              [inst.id]: newVal,
+                                            };
+                                            return next;
+                                          });
+                                          setPattern((prev) => {
+                                            const next = [...prev];
+                                            if (!next[si]) return prev;
+                                            next[si] = { ...next[si], [inst.id]: newVal };
+                                            return next;
+                                          });
+                                          playSound(audioCtxRef.current, inst.id, audioCtxRef.current.currentTime, 0.7, genre);
+
+                                        } else if (dragNoteRef.current.active) {
+                                           // Move mode: handle dragging existing note
+                                           const drag = dragNoteRef.current;
+                                           if (drag.instId === inst.id && drag.step === si) return;
+                                            drag.moved = true;
+                                            setManualPattern((prev) => {
+                                              const next = [...prev];
+                                              // clear origin
+                                              next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
+                                              // set new
+                                              next[si] = { ...next[si], [inst.id]: drag.value };
+                                              drag.instId = inst.id;
+                                              drag.step = si;
+                                              return next;
+                                            });
+                                            setPattern((prev) => {
+                                              const next = [...prev];
+                                              if (next[drag.step]) {
+                                                next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
+                                              }
+                                              if (next[si]) {
+                                                next[si] = { ...next[si], [inst.id]: drag.value };
+                                              }
+                                              return next;
+                                            });
+                                        }
                                       }}
                                       onMouseUp={() => {
                                         const drag = dragNoteRef.current;
-                                        if (!drag.active) return;
-                                        if (!drag.moved) {
-                                          // treat as toggle off
+                                        if (drag.active && !drag.moved) {
+                                          // This was a click, not a drag. Toggle note off.
                                           setManualPattern((prev) => {
                                             const next = [...prev];
                                             next[drag.step] = {
@@ -3458,13 +3428,7 @@ const DrumFillGen = () => {
                                             return next;
                                           });
                                         }
-                                        dragNoteRef.current = {
-                                          active: false,
-                                          instId: null,
-                                          step: 0,
-                                          moved: false,
-                                          value: 1,
-                                        };
+                                        // Global mouseup will clear refs.
                                       }}
                                     />
                                   )}
@@ -3478,87 +3442,98 @@ const DrumFillGen = () => {
                   </div>
                 </div>
 
-                {/* ── CENTERED PLAY BUTTON ── */}
-                <div className="flex items-center justify-center py-2 gap-3 flex-wrap">
-                  {generatorMode === "manual" && (
-                    <>
-                      <button
-                        onClick={() => startRecording(recordMode)}
-                        className={`flex items-center gap-2 px-5 py-3 rounded-full font-bold text-sm transition-all border ${isRecording || isCountIn
-                          ? "bg-red-600 text-white border-red-400 shadow-red-500/30"
-                          : "bg-neutral-800 text-red-300 border-red-500/30 hover:bg-neutral-700"
-                          }`}
-                        title="Count-in then capture keyboard hits to the manual grid"
-                      >
-                        {isRecording || isCountIn ? (
-                          <>
-                            <StopCircle size={16} />
-                            STOP REC
-                          </>
-                        ) : (
-                          <>
-                            <Activity size={16} />
-                            RECORD
-                          </>
-                        )}
-                      </button>
-                      <button
-                        onClick={() =>
-                          setRecordMode((m) => (m === "once" ? "loop" : "once"))
-                        }
-                        className={`h-12 px-3 rounded-full border text-xs font-bold transition-all ${recordMode === "loop"
-                          ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200"
-                          : "bg-neutral-800 border-neutral-700 text-neutral-300 hover:text-white"
-                          }`}
-                        title="Toggle between single-bar capture and continuous loop"
-                      >
-                        {recordMode === "loop" ? "LOOP" : "ONCE"}
-                      </button>
-                      <button
-                        onClick={() =>
-                          setRecordWriteMode((m) => m === "merge" ? "overwrite" : m === "overwrite" ? "newtake" : "merge")
-                        }
-                        className={`h-12 px-3 rounded-full border text-xs font-bold transition-all ${recordWriteMode === "overwrite"
-                          ? "bg-rose-500/20 border-rose-500/40 text-rose-200"
-                          : recordWriteMode === "newtake"
-                            ? "bg-sky-500/20 border-sky-500/40 text-sky-200"
-                            : "bg-amber-500/20 border-amber-500/40 text-amber-200"
-                          }`}
-                        title={recordWriteMode === "merge" ? "MERGE: New hits layer on top of existing pattern" : recordWriteMode === "overwrite" ? "OVERWRITE: Clear manual hits before recording" : "NEW TAKE: Clear everything and regenerate fresh AI base"}
-                      >
-                        {recordWriteMode === "merge" ? "MERGE" : recordWriteMode === "overwrite" ? "OVERWRITE" : "NEW TAKE"}
-                      </button>
-                    </>
-                  )}
-                  <button
-                    onClick={handlePlayToggle}
-                    className={`flex items-center gap-3 px-10 py-3 rounded-full font-bold text-lg shadow-2xl transition-all active:scale-95 ${isPlaying ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/30" : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30"}`}
-                  >
-                    {isPlaying ? (
+                {/* ── TRANSPORT CONTROLS ── */}
+                <div className="flex items-center justify-center py-2">
+                  <div className="bg-neutral-900/70 border border-neutral-700/80 rounded-xl p-2 flex items-center gap-2 shadow-lg">
+                    
+                    {generatorMode === "manual" && (
                       <>
-                        <Square size={20} fill="currentColor" /> STOP
-                      </>
-                    ) : (
-                      <>
-                        <Play size={20} fill="currentColor" /> PLAY
+                        <button
+                          onClick={() => startRecording(recordMode)}
+                          disabled={isPlaying && !isRecording}
+                          className={`flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-sm transition-all border ${
+                            isRecording || isCountIn
+                              ? "bg-red-600 text-white border-red-400 shadow-lg shadow-red-500/20"
+                              : "bg-neutral-800 text-red-300 border-red-500/30 hover:bg-neutral-700 disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                          }`}
+                          title="Count-in then capture keyboard hits to the manual grid"
+                        >
+                          {isRecording || isCountIn ? (
+                            <>
+                              <StopCircle size={16} />
+                              STOP
+                            </>
+                          ) : (
+                            <>
+                              <Activity size={16} />
+                              REC
+                            </>
+                          )}
+                        </button>
+
+                        <div className="flex flex-col gap-1.5">
+                           <button
+                            onClick={() => setRecordMode((m) => (m === "once" ? "loop" : "once"))}
+                            disabled={isRecording || isCountIn}
+                            className={`w-full px-3 py-1 rounded border text-[10px] font-bold transition-all text-center ${
+                              recordMode === "loop"
+                                ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200"
+                                : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                            }`}
+                            title="Toggle between single-bar capture and continuous loop"
+                          >
+                            {recordMode === "loop" ? "LOOP REC" : "REC ONCE"}
+                          </button>
+                          <button
+                            onClick={() => setRecordWriteMode((m) => m === "merge" ? "overwrite" : m === "overwrite" ? "newtake" : "merge")}
+                            disabled={isRecording || isCountIn}
+                             className={`w-full px-3 py-1 rounded border text-[10px] font-bold transition-all text-center ${
+                              recordWriteMode === "overwrite"
+                                ? "bg-rose-500/20 border-rose-500/40 text-rose-200"
+                                : recordWriteMode === "newtake"
+                                ? "bg-sky-500/20 border-sky-500/40 text-sky-200"
+                                : "bg-amber-500/20 border-amber-500/40 text-amber-200"
+                            } disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed`}
+                            title={recordWriteMode === "merge" ? "MERGE: New hits layer on top" : recordWriteMode === "overwrite" ? "OVERWRITE: Clear manual hits before recording" : "NEW TAKE: Clear everything and regenerate"}
+                          >
+                            {recordWriteMode === "merge" ? "MERGE" : recordWriteMode === "overwrite" ? "OVERWRITE" : "NEW TAKE"}
+                          </button>
+                        </div>
                       </>
                     )}
-                  </button>
-                  <button
-                    onClick={() => setIsGrooveLooping((v) => !v)}
-                    className={`h-12 px-4 rounded-full border text-sm font-bold transition-all flex items-center gap-2 ${isGrooveLooping
-                      ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                      : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white"
+
+                    <button
+                      onClick={handlePlayToggle}
+                      disabled={isRecording || isCountIn}
+                      className={`flex items-center gap-3 px-10 py-3 rounded-lg font-bold text-lg shadow-2xl transition-all active:scale-95 ${
+                        isPlaying && !isRecording && !isCountIn
+                          ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/30"
+                          : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30"
+                      } disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed`}
+                    >
+                      {isPlaying && !isRecording && !isCountIn ? (
+                        <>
+                          <Square size={20} fill="currentColor" /> STOP
+                        </>
+                      ) : (
+                        <>
+                          <Play size={20} fill="currentColor" /> PLAY
+                        </>
+                      )}
+                    </button>
+                    
+                    <button
+                      onClick={() => setIsGrooveLooping((v) => !v)}
+                      className={`h-full px-4 rounded-lg border text-sm font-bold transition-all flex items-center gap-2 ${
+                        isGrooveLooping
+                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                          : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white"
                       }`}
-                    title={
-                      isGrooveLooping
-                        ? "Loop groove is ON"
-                        : "Loop groove is OFF (play once)"
-                    }
-                  >
-                    <Repeat size={14} />
-                    LOOP
-                  </button>
+                      title={ isGrooveLooping ? "Loop groove is ON" : "Loop groove is OFF (play once)"}
+                    >
+                      <Repeat size={14} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
