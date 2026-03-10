@@ -83,6 +83,26 @@ const playSound = (ctx, type, time, velocity = 1, drumKitName = DEFAULT_DRUM_KIT
   const sampleVelocity = velocity <= 1
     ? Math.max(1, Math.round(velocity * 127))
     : Math.max(1, Math.min(127, Math.round(velocity)));
+  const isMetLow = type === "metronome";
+  const isMetHigh = type === "metronome_high";
+
+  // Metronome always uses dedicated hi/low beeps so it stays clear across kits.
+  if (isMetHigh || isMetLow) {
+    try {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(isMetHigh ? 1800 : 900, time);
+      g.gain.setValueAtTime(synthVelocity * 0.75, time);
+      g.gain.exponentialRampToValueAtTime(0.001, time + 0.11);
+      osc.connect(g).connect(out);
+      osc.start(time);
+      osc.stop(time + 0.12);
+    } catch (e) {
+      console.warn("metronome synth failed:", e);
+    }
+    return;
+  }
 
 
   // 1. Try to play sampled sound
@@ -101,8 +121,8 @@ const playSound = (ctx, type, time, velocity = 1, drumKitName = DEFAULT_DRUM_KIT
         tomMid: "tom2",
         tomLow: "tom3",
         crash: "hihat",
-        metronome: "snare",
-        metronome_high: "snare"
+        metronome: "tom3",
+        metronome_high: "hihat"
       };
       const note = drumMap[type] || type;
       try {
@@ -1866,6 +1886,19 @@ const DrumFillGen = () => {
   const manualPatternRef = useRef(manualPattern);
   manualPatternRef.current = manualPattern;
 
+  const mergeUserHitsOntoPattern = useCallback((basePattern, manual) => {
+    return basePattern.map((step, i) => {
+      const overlay = manual[i] || {};
+      const merged = { ...step };
+      Object.keys(overlay).forEach((instId) => {
+        if ((overlay[instId] || 0) > 0) {
+          merged[instId] = overlay[instId];
+        }
+      });
+      return merged;
+    });
+  }, []);
+
   useEffect(() => {
     const genModeRaw = generatorMode === "manual" ? "groove" : generatorMode;
     const newPattern = generatePattern(
@@ -1876,22 +1909,27 @@ const DrumFillGen = () => {
       genModeRaw,
     );
     if (generatorMode === "manual") {
-      for (let i = 0; i < 16; i++) {
-        newPattern[i] = { ...newPattern[i], ...manualPatternRef.current[i] };
-      }
+      setPattern(mergeUserHitsOntoPattern(newPattern, manualPatternRef.current));
+      return;
     }
     setPattern(newPattern);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [genre, complexity, intensity, fillAmount, generatorMode, regenSeed]);
+  }, [
+    genre,
+    complexity,
+    intensity,
+    fillAmount,
+    generatorMode,
+    regenSeed,
+    mergeUserHitsOntoPattern,
+  ]);
 
   // ── Apply manual overlay whenever manualPattern changes ──
   useEffect(() => {
     if (generatorMode === "manual") {
-      setPattern((prev) =>
-        prev.map((step, i) => ({ ...step, ...manualPattern[i] }))
-      );
+      setPattern((prev) => mergeUserHitsOntoPattern(prev, manualPattern));
     }
-  }, [manualPattern, generatorMode]);
+  }, [manualPattern, generatorMode, mergeUserHitsOntoPattern]);
 
   const applyManualHit = useCallback((stepIndex, instId, value = 1) => {
     setManualPattern((prev) => {
@@ -2553,7 +2591,6 @@ const DrumFillGen = () => {
               pattern: pattern.map((s) => ({ ...s })),
               params: {
                 genre,
-                drumKit: selectedDrumKit,
                 complexity,
                 intensity,
                 fillAmount: effectiveFill,
@@ -2578,7 +2615,6 @@ const DrumFillGen = () => {
         pattern: pattern.map((s) => ({ ...s })),
         params: {
           genre,
-          drumKit: selectedDrumKit,
           complexity,
           intensity,
           fillAmount: effectiveFill,
@@ -2593,7 +2629,6 @@ const DrumFillGen = () => {
   const loadFromLibrary = (libItem) => {
     const { params } = libItem;
     setGenre(params.genre);
-    setSelectedDrumKit(params.drumKit ?? styleToDrumKit(params.genre ?? "acoustic"));
     setComplexity(params.complexity);
     setIntensity(params.intensity);
     setFillAmount(params.fillAmount);
@@ -2733,15 +2768,6 @@ const DrumFillGen = () => {
     <button
       onClick={() => setGenre(id)}
       className={`py-2 px-3 rounded-md text-sm font-medium transition-all border border-transparent ${genre === id ? `bg-${color}-600 text-white shadow-lg border-${color}-400` : "bg-neutral-700 text-gray-400 hover:bg-neutral-600"}`}
-    >
-      {label}
-    </button>
-  );
-
-  const KitBtn = ({ id, label, color }) => (
-    <button
-      onClick={() => setSelectedDrumKit(id)}
-      className={`py-2 px-3 rounded-md text-sm font-medium transition-all border border-transparent ${selectedDrumKit === id ? `bg-${color}-600 text-white shadow-lg border-${color}-400` : "bg-neutral-700 text-gray-400 hover:bg-neutral-600"}`}
     >
       {label}
     </button>
@@ -2962,6 +2988,22 @@ const DrumFillGen = () => {
               className="bg-transparent text-white font-mono font-bold text-right w-12 focus:outline-none"
             />
           </div>
+          <div className="flex items-center gap-2 bg-neutral-800 px-3 py-1.5 rounded-lg border border-neutral-700">
+            <span className="text-[10px] text-gray-400 font-bold uppercase">
+              KIT
+            </span>
+            <select
+              value={selectedDrumKit}
+              onChange={(e) => setSelectedDrumKit(e.target.value)}
+              className="bg-neutral-900 text-white text-xs font-semibold rounded px-2 py-1 border border-neutral-700 focus:outline-none"
+              title="Global drum sound preference"
+            >
+              <option value="acoustic-kit">Acoustic Kit</option>
+              <option value="R8">Roland R8</option>
+              <option value="LINN">LinnDrum</option>
+              <option value="breakbeat8">Breakbeat 8</option>
+            </select>
+          </div>
           <input
             type="file"
             accept=".json"
@@ -3115,7 +3157,7 @@ const DrumFillGen = () => {
                   <div className="space-y-5">
                     <div>
                       <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
-                        Genre Style
+                        Pattern Style
                       </label>
                       <div className="grid grid-cols-2 gap-1.5">
                         <GenreBtn id="acoustic" label="Classic" color="amber" />
@@ -3124,17 +3166,6 @@ const DrumFillGen = () => {
                         <GenreBtn id="breakbeat" label="Breakbeat" color="rose" />
                         <GenreBtn id="jazz" label="Jazz" color="sky" />
                         <GenreBtn id="metal" label="Metal" color="red" />
-                      </div>
-                    </div>
-                    <div>
-                      <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
-                        Drum Kit Sound
-                      </label>
-                      <div className="grid grid-cols-2 gap-1.5">
-                        <KitBtn id="acoustic-kit" label="Acoustic Kit" color="amber" />
-                        <KitBtn id="R8" label="Roland R8" color="indigo" />
-                        <KitBtn id="LINN" label="LinnDrum" color="purple" />
-                        <KitBtn id="breakbeat8" label="Breakbeat 8" color="rose" />
                       </div>
                     </div>
                     <div>
