@@ -1640,6 +1640,10 @@ const DrumFillGen = () => {
   const countInTimerRef = useRef(null);
   const playheadTimerIdsRef = useRef([]);
   const pendingSeekStepRef = useRef(null);
+  const appModeRef = useRef(appMode);
+  appModeRef.current = appMode;
+  const segmentsRef = useRef(segments);
+  segmentsRef.current = segments;
   const recordWriteModeRef = useRef("merge");
   const isPlayingRef = useRef(false);
   const lastScheduledStepRef = useRef(0);
@@ -2330,6 +2334,18 @@ const DrumFillGen = () => {
       const stepDuration = 60.0 / bpm / 4.0;
       const elapsedTime = audioCtxRef.current.currentTime - startTimeRef.current;
       const currentAbsoluteStep = Math.floor(elapsedTime / stepDuration);
+      const getBarPlayMode = (globalBarIndex) => {
+        let barsBefore = 0;
+        for (const seg of segmentsRef.current) {
+          const barsInSeg = seg.bars.length;
+          if (globalBarIndex >= barsBefore && globalBarIndex < barsBefore + barsInSeg) {
+            const localBarIdx = globalBarIndex - barsBefore;
+            return seg.barPlayModes?.[localBarIdx] || "next";
+          }
+          barsBefore += barsInSeg;
+        }
+        return "next";
+      };
 
       // Early boundary detection to clear the board BEFORE next loop hits are played
       if (isRecordingRef.current) {
@@ -2351,6 +2367,32 @@ const DrumFillGen = () => {
 
       if (currentAbsoluteStep > lastScheduledStepRef.current) {
         const stepToSchedule = currentAbsoluteStep % maxSteps;
+
+        // Arrangement mode can override timeline flow at bar boundaries.
+        if (appModeRef.current === "arrangement" && stepToSchedule % 16 === 0 && lastScheduledStepRef.current >= 0) {
+          const prevStep = (stepToSchedule - 1 + maxSteps) % maxSteps;
+          const prevBarIndex = Math.floor(prevStep / 16);
+          const barMode = getBarPlayMode(prevBarIndex);
+
+          if (barMode === "loop") {
+            const loopStartStep = prevBarIndex * 16;
+            const cycleBase = currentAbsoluteStep - stepToSchedule;
+            const loopAbsoluteStep = cycleBase + loopStartStep;
+            startTimeRef.current = audioCtxRef.current.currentTime - (loopAbsoluteStep * stepDuration);
+            lastScheduledStepRef.current = loopAbsoluteStep - 1;
+            currentStepRef.current = loopStartStep;
+            setCurrentStep(loopStartStep);
+            animationFrameId = requestAnimationFrame(tick);
+            return;
+          }
+
+          if (barMode === "stop") {
+            isPlayingRef.current = false;
+            setIsPlaying(false);
+            return;
+          }
+        }
+
         const timeToSchedule = startTimeRef.current + (currentAbsoluteStep * stepDuration);
         scheduleNote(stepToSchedule, timeToSchedule);
         lastScheduledStepRef.current = currentAbsoluteStep;
