@@ -1639,6 +1639,7 @@ const DrumFillGen = () => {
   const timerIDRef = useRef(null);
   const countInTimerRef = useRef(null);
   const playheadTimerIdsRef = useRef([]);
+  const pendingSeekStepRef = useRef(null);
   const recordWriteModeRef = useRef("merge");
   const isPlayingRef = useRef(false);
   const lastScheduledStepRef = useRef(0);
@@ -2374,10 +2375,19 @@ const DrumFillGen = () => {
           }
 
           const beginPlayback = () => {
+            const pendingStep = pendingSeekStepRef.current;
+            const hasPendingSeek = pendingStep !== null;
+            const initialStep = hasPendingSeek ? pendingStep : 0;
+            const stepDuration = 60.0 / bpm / 4.0;
+
             clearPlayheadTimers();
-            currentStepRef.current = 0;
-            lastScheduledStepRef.current = -1;
-            startTimeRef.current = audioCtxRef.current.currentTime + 0.1; // 100ms lead-in
+            currentStepRef.current = initialStep % maxSteps;
+            lastScheduledStepRef.current = initialStep - 1;
+            startTimeRef.current = hasPendingSeek
+              ? audioCtxRef.current.currentTime - (initialStep * stepDuration)
+              : audioCtxRef.current.currentTime + 0.1; // 100ms lead-in for normal play from start
+            pendingSeekStepRef.current = null;
+            setCurrentStep(initialStep % maxSteps);
             isPlayingRef.current = true;
             animationFrameId = requestAnimationFrame(tick);
           };
@@ -2736,15 +2746,23 @@ const DrumFillGen = () => {
       if (audioCtxRef.current.state === "suspended")
         audioCtxRef.current.resume();
       clearTimeout(timerIDRef.current);
-      currentStepRef.current = targetStep;
+      clearPlayheadTimers();
+      pendingSeekStepRef.current = targetStep;
+      currentStepRef.current = targetStep % maxSteps;
+      setCurrentStep(targetStep % maxSteps);
+
+      const stepDuration = 60.0 / bpm / 4.0;
+      startTimeRef.current = audioCtxRef.current.currentTime - (targetStep * stepDuration);
+      lastScheduledStepRef.current = targetStep - 1;
       nextNoteTimeRef.current = audioCtxRef.current.currentTime;
+
       if (!isPlaying) {
         setIsPlaying(true); // let useEffect kick off the scheduler
       } else {
         scheduler(); // already playing — restart scheduler loop from new position
       }
     },
-    [maxSteps, isPlaying, scheduler],
+    [maxSteps, isPlaying, scheduler, clearPlayheadTimers, bpm],
   );
 
   const deleteSegment = (segIndex) => {
@@ -3879,6 +3897,7 @@ const DrumFillGen = () => {
                             <div
                               key={barIndex}
                               draggable={true}
+                              onClick={() => seekToBar(globalBarIdx)}
                               onDragStart={(e) => {
                                 e.dataTransfer.setData("type", "bar");
                                 e.dataTransfer.setData("segIndex", segIndex);
@@ -3890,7 +3909,8 @@ const DrumFillGen = () => {
                               }
                               className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group
                                                                 ${item ? "border-transparent bg-neutral-800 hover:bg-neutral-700/60 cursor-pointer" : "border-neutral-700/50 hover:border-neutral-600 hover:bg-neutral-800/20"}
-                                                                ${isCurrent ? "ring-1 ring-emerald-500/50" : ""} cursor-grab active:cursor-grabbing`}
+                                                                ${isCurrent ? "ring-1 ring-emerald-500/50" : ""} ${item ? "" : "cursor-grab active:cursor-grabbing"}`}
+                              title={item ? "Play from this bar" : "Play from this empty bar"}
                             >
                               {/* Playback progress bar */}
                               {isCurrent && (
@@ -4132,7 +4152,9 @@ const DrumFillGen = () => {
                           return (
                             <div
                               key={barIndex}
+                              onClick={() => seekToBar(globalBarIdx)}
                               className={`p-3 relative border-b border-neutral-700/50 last:border-b-0 transition-colors cursor-pointer hover:bg-neutral-800/40 ${isBarCurrent ? (item ? "bg-emerald-900/10" : "bg-neutral-800/60") : ""}`}
+                              title="Play from this bar"
                             >
                               {/* ── Bar header: groove name + play controls + mode toggle ── */}
                               <div className="flex items-center justify-between mb-2 gap-1">
