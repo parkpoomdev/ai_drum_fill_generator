@@ -36,6 +36,14 @@ import {
 import { Soundfont, DrumMachine, Sampler } from "smplr";
 
 const CWILSO_BASE = "/sounds/drum-samples/";
+const DEFAULT_DRUM_KIT = "acoustic-kit";
+
+const styleToDrumKit = (style) => {
+  if (style === "electronic") return "R8";
+  if (style === "funk") return "LINN";
+  if (style === "breakbeat") return "breakbeat8";
+  return DEFAULT_DRUM_KIT;
+};
 
 // ─────────────────────────────────────────────
 // AUDIO ENGINE
@@ -65,7 +73,7 @@ const createAudioContext = () => {
   return ctx;
 };
 
-const playSound = (ctx, type, time, velocity = 1, genre = "acoustic", drumsRef = null, drumsLoadedRef = null) => {
+const playSound = (ctx, type, time, velocity = 1, drumKitName = DEFAULT_DRUM_KIT, drumsRef = null, drumsLoadedRef = null) => {
   if (!ctx) return;
   if (ctx.state === "suspended") {
     ctx.resume().catch(() => {});
@@ -80,12 +88,7 @@ const playSound = (ctx, type, time, velocity = 1, genre = "acoustic", drumsRef =
   // 1. Try to play sampled sound
   const samplesReady = drumsLoadedRef && drumsLoadedRef.current;
   if (drumsRef && drumsRef.current) {
-    let kitName = "acoustic-kit";
-    if (genre === "electronic") kitName = "R8";
-    if (genre === "funk") kitName = "LINN";
-    if (genre === "breakbeat") kitName = "breakbeat8";
-    if (genre === "jazz" || genre === "metal") kitName = "acoustic-kit";
-
+    const kitName = drumKitName || DEFAULT_DRUM_KIT;
     const drumKit = drumsRef.current[kitName];
     // Check if kit is mostly loaded (smplr usually has a 'loaded' property or we check if sounds trigger)
     if (drumKit) {
@@ -1494,6 +1497,9 @@ const DrumFillGen = () => {
 
   // ── Generator params ──
   const [genre, setGenre] = useState(savedState?.genre ?? "acoustic");
+  const [selectedDrumKit, setSelectedDrumKit] = useState(
+    savedState?.drumKit ?? styleToDrumKit(savedState?.genre ?? "acoustic"),
+  );
   const [complexity, setComplexity] = useState(savedState?.complexity ?? 60);
   const [intensity, setIntensity] = useState(savedState?.intensity ?? 70);
   const [fillAmount, setFillAmount] = useState(savedState?.fillAmount ?? 25);
@@ -1729,7 +1735,7 @@ const DrumFillGen = () => {
       setCountInBeats(4);
       ensureDrumsReady();
       // First upbeat click immediately (beat 4)
-      playSound(audioCtxRef.current, "metronome_high", audioCtxRef.current.currentTime, 1, genre, drumsRef, drumsLoadedRef);
+      playSound(audioCtxRef.current, "metronome_high", audioCtxRef.current.currentTime, 1, selectedDrumKit, drumsRef, drumsLoadedRef);
 
       const beatMs = (60 / bpm) * 1000;
       countInTimerRef.current = setInterval(() => {
@@ -1749,7 +1755,7 @@ const DrumFillGen = () => {
               isFirst ? "metronome_high" : "metronome",
               ctx.currentTime,
               1,
-              genre,
+              selectedDrumKit,
               drumsRef,
               drumsLoadedRef,
             );
@@ -1766,7 +1772,7 @@ const DrumFillGen = () => {
       recordMode,
       recordWriteMode,
       stopRecording,
-      genre,
+      selectedDrumKit,
       drumsRef,
       ensureDrumsReady,
     ],
@@ -1824,6 +1830,7 @@ const DrumFillGen = () => {
       generatorMode,
       bpm,
       genre,
+      drumKit: selectedDrumKit,
       complexity,
       intensity,
       fillAmount,
@@ -1841,6 +1848,7 @@ const DrumFillGen = () => {
     generatorMode,
     bpm,
     genre,
+    selectedDrumKit,
     complexity,
     intensity,
     fillAmount,
@@ -2146,19 +2154,19 @@ const DrumFillGen = () => {
       const s = activePattern[step];
       if (!s) return;
       const ctx = audioCtxRef.current;
-      if (s.kick > 0) playSound(ctx, "kick", time, s.kick, genre, drumsRef, drumsLoadedRef);
-      if (s.snare > 0) playSound(ctx, "snare", time, s.snare, genre, drumsRef, drumsLoadedRef);
-      if (s.hihat > 0) playSound(ctx, "hihat", time, s.hihat, genre, drumsRef, drumsLoadedRef);
-      if (s.tomHigh > 0) playSound(ctx, "tomHigh", time, s.tomHigh, genre, drumsRef, drumsLoadedRef);
-      if (s.tomMid > 0) playSound(ctx, "tomMid", time, s.tomMid, genre, drumsRef, drumsLoadedRef);
-      if (s.tomLow > 0) playSound(ctx, "tomLow", time, s.tomLow, genre, drumsRef, drumsLoadedRef);
-      if (s.crash > 0) playSound(ctx, "crash", time, s.crash, genre, drumsRef, drumsLoadedRef);
+      if (s.kick > 0) playSound(ctx, "kick", time, s.kick, selectedDrumKit, drumsRef, drumsLoadedRef);
+      if (s.snare > 0) playSound(ctx, "snare", time, s.snare, selectedDrumKit, drumsRef, drumsLoadedRef);
+      if (s.hihat > 0) playSound(ctx, "hihat", time, s.hihat, selectedDrumKit, drumsRef, drumsLoadedRef);
+      if (s.tomHigh > 0) playSound(ctx, "tomHigh", time, s.tomHigh, selectedDrumKit, drumsRef, drumsLoadedRef);
+      if (s.tomMid > 0) playSound(ctx, "tomMid", time, s.tomMid, selectedDrumKit, drumsRef, drumsLoadedRef);
+      if (s.tomLow > 0) playSound(ctx, "tomLow", time, s.tomLow, selectedDrumKit, drumsRef, drumsLoadedRef);
+      if (s.crash > 0) playSound(ctx, "crash", time, s.crash, selectedDrumKit, drumsRef, drumsLoadedRef);
 
       // Metronome logic
       const metShouldClick = isMetronomeEnabled || isRecording;
       if (metShouldClick && step % 4 === 0) {
         const isHigh = step % 16 === 0;
-        playSound(ctx, isHigh ? "metronome_high" : "metronome", time, 1, genre, drumsRef, drumsLoadedRef);
+        playSound(ctx, isHigh ? "metronome_high" : "metronome", time, 1, selectedDrumKit, drumsRef, drumsLoadedRef);
       }
 
       // Piano logic for Lyrics & Chords (Arrangement mode)
@@ -2270,7 +2278,7 @@ const DrumFillGen = () => {
         }
       }
     },
-    [activePattern, genre, isMetronomeEnabled, appMode, segments, bpm, drumsRef, generatorMode],
+    [activePattern, selectedDrumKit, isMetronomeEnabled, appMode, segments, bpm, drumsRef, generatorMode],
   );
 
   const startTimeRef = useRef(0);
@@ -2424,7 +2432,7 @@ const DrumFillGen = () => {
           inst === "tomMid" ? "tomMid" : inst,
           audioCtxRef.current.currentTime,
           1,
-          genre,
+          selectedDrumKit,
           drumsRef,
           drumsLoadedRef
         );
@@ -2515,7 +2523,7 @@ const DrumFillGen = () => {
       window.removeEventListener("mouseup", onMouseUp);
     };
   }, [
-    genre,
+    selectedDrumKit,
     isRecording,
     isCountIn,
     appMode,
@@ -2545,6 +2553,7 @@ const DrumFillGen = () => {
               pattern: pattern.map((s) => ({ ...s })),
               params: {
                 genre,
+                drumKit: selectedDrumKit,
                 complexity,
                 intensity,
                 fillAmount: effectiveFill,
@@ -2569,6 +2578,7 @@ const DrumFillGen = () => {
         pattern: pattern.map((s) => ({ ...s })),
         params: {
           genre,
+          drumKit: selectedDrumKit,
           complexity,
           intensity,
           fillAmount: effectiveFill,
@@ -2583,6 +2593,7 @@ const DrumFillGen = () => {
   const loadFromLibrary = (libItem) => {
     const { params } = libItem;
     setGenre(params.genre);
+    setSelectedDrumKit(params.drumKit ?? styleToDrumKit(params.genre ?? "acoustic"));
     setComplexity(params.complexity);
     setIntensity(params.intensity);
     setFillAmount(params.fillAmount);
@@ -2722,6 +2733,15 @@ const DrumFillGen = () => {
     <button
       onClick={() => setGenre(id)}
       className={`py-2 px-3 rounded-md text-sm font-medium transition-all border border-transparent ${genre === id ? `bg-${color}-600 text-white shadow-lg border-${color}-400` : "bg-neutral-700 text-gray-400 hover:bg-neutral-600"}`}
+    >
+      {label}
+    </button>
+  );
+
+  const KitBtn = ({ id, label, color }) => (
+    <button
+      onClick={() => setSelectedDrumKit(id)}
+      className={`py-2 px-3 rounded-md text-sm font-medium transition-all border border-transparent ${selectedDrumKit === id ? `bg-${color}-600 text-white shadow-lg border-${color}-400` : "bg-neutral-700 text-gray-400 hover:bg-neutral-600"}`}
     >
       {label}
     </button>
@@ -2959,6 +2979,9 @@ const DrumFillGen = () => {
                       setGeneratorMode(parsed.generatorMode);
                     if (parsed.bpm) setBpm(parsed.bpm);
                     if (parsed.genre) setGenre(parsed.genre);
+                    if (parsed.drumKit) setSelectedDrumKit(parsed.drumKit);
+                    else if (parsed.genre)
+                      setSelectedDrumKit(styleToDrumKit(parsed.genre));
                     if (parsed.complexity !== undefined)
                       setComplexity(parsed.complexity);
                     if (parsed.intensity !== undefined)
@@ -2998,6 +3021,7 @@ const DrumFillGen = () => {
                 generatorMode,
                 bpm,
                 genre,
+                drumKit: selectedDrumKit,
                 complexity,
                 intensity,
                 fillAmount,
@@ -3095,11 +3119,22 @@ const DrumFillGen = () => {
                       </label>
                       <div className="grid grid-cols-2 gap-1.5">
                         <GenreBtn id="acoustic" label="Classic" color="amber" />
-                        <GenreBtn id="electronic" label="Roland R8" color="indigo" />
-                        <GenreBtn id="funk" label="LinnDrum" color="purple" />
+                        <GenreBtn id="electronic" label="Electronic" color="indigo" />
+                        <GenreBtn id="funk" label="Funk" color="purple" />
                         <GenreBtn id="breakbeat" label="Breakbeat" color="rose" />
                         <GenreBtn id="jazz" label="Jazz" color="sky" />
                         <GenreBtn id="metal" label="Metal" color="red" />
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-gray-400 uppercase mb-2 block">
+                        Drum Kit Sound
+                      </label>
+                      <div className="grid grid-cols-2 gap-1.5">
+                        <KitBtn id="acoustic-kit" label="Acoustic Kit" color="amber" />
+                        <KitBtn id="R8" label="Roland R8" color="indigo" />
+                        <KitBtn id="LINN" label="LinnDrum" color="purple" />
+                        <KitBtn id="breakbeat8" label="Breakbeat 8" color="rose" />
                       </div>
                     </div>
                     <div>
@@ -3482,7 +3517,7 @@ const DrumFillGen = () => {
                                             inst.id,
                                             audioCtxRef.current.currentTime,
                                             1,
-                                            genre,
+                                            selectedDrumKit,
                                             drumsRef,
                                             drumsLoadedRef
                                           );
@@ -3508,7 +3543,7 @@ const DrumFillGen = () => {
                                             next[si] = { ...next[si], [inst.id]: newVal };
                                             return next;
                                           });
-                                          playSound(audioCtxRef.current, inst.id, audioCtxRef.current.currentTime, 0.7, genre, drumsRef, drumsLoadedRef);
+                                          playSound(audioCtxRef.current, inst.id, audioCtxRef.current.currentTime, 0.7, selectedDrumKit, drumsRef, drumsLoadedRef);
 
                                         } else if (dragNoteRef.current.active) {
                                           // Move mode: handle dragging existing note
