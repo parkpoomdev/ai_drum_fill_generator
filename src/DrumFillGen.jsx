@@ -33,154 +33,132 @@ import {
   ArrowRight,
   StopCircle,
 } from "lucide-react";
-import { Soundfont } from "smplr";
+import { Soundfont, DrumMachine, Sampler } from "smplr";
+
+const CWILSO_BASE = "/sounds/drum-samples/";
 
 // ─────────────────────────────────────────────
 // AUDIO ENGINE
 // ─────────────────────────────────────────────
 const createAudioContext = () => {
   const AC = window.AudioContext || window.webkitAudioContext;
-  return new AC();
+  const ctx = new AC();
+
+  // Master Chain: Compressor -> Destination
+  const compressor = ctx.createDynamicsCompressor();
+  compressor.threshold.setValueAtTime(-24, ctx.currentTime);
+  compressor.knee.setValueAtTime(40, ctx.currentTime);
+  compressor.ratio.setValueAtTime(12, ctx.currentTime);
+  compressor.attack.setValueAtTime(0, ctx.currentTime);
+  compressor.release.setValueAtTime(0.25, ctx.currentTime);
+
+  const masterGain = ctx.createGain();
+  masterGain.gain.setValueAtTime(1.0, ctx.currentTime);
+
+  compressor.connect(masterGain);
+  masterGain.connect(ctx.destination);
+
+  // Attach nodes to context for easier access
+  ctx.masterGain = masterGain;
+  ctx.masterCompressor = compressor;
+
+  return ctx;
 };
 
-const playSound = (ctx, type, time, velocity = 1, genre = "acoustic") => {
-  const osc = ctx.createOscillator();
-  const gain = ctx.createGain();
-  let vol = velocity;
-  if (genre === "electronic") vol *= 0.8;
-  if (genre === "jazz") vol *= 0.7;
-  if (genre === "metal") vol *= 1.1;
+const playSound = (ctx, type, time, velocity = 1, genre = "acoustic", drumsRef = null, drumsLoadedRef = null) => {
+  if (!ctx) return;
+  if (ctx.state === "suspended") {
+    ctx.resume().catch(() => {});
+  }
+  const out = ctx.masterCompressor || ctx.destination;
+  const synthVelocity = Math.max(0, Math.min(1, velocity));
+  const sampleVelocity = velocity <= 1
+    ? Math.max(1, Math.round(velocity * 127))
+    : Math.max(1, Math.min(127, Math.round(velocity)));
 
-  if (type.startsWith("tom")) {
-    let sf = 150,
-      ef = 50;
-    if (type === "tomHigh") {
-      sf = 200;
-      ef = 80;
-    }
-    if (type === "tomMid") {
-      sf = 140;
-      ef = 60;
-    }
-    if (type === "tomLow") {
-      sf = 90;
-      ef = 40;
-    }
-    if (genre === "electronic") {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(sf * 1.5, time);
-      osc.frequency.exponentialRampToValueAtTime(ef, time + 0.2);
-      gain.gain.setValueAtTime(vol, time);
-      gain.gain.exponentialRampToValueAtTime(0.01, time + 0.3);
+
+  // 1. Try to play sampled sound
+  const samplesReady = drumsLoadedRef && drumsLoadedRef.current;
+  if (drumsRef && drumsRef.current) {
+    let kitName = "acoustic-kit";
+    if (genre === "electronic") kitName = "R8";
+    if (genre === "funk") kitName = "LINN";
+    if (genre === "breakbeat") kitName = "breakbeat8";
+    if (genre === "jazz" || genre === "metal") kitName = "acoustic-kit";
+
+    const drumKit = drumsRef.current[kitName];
+    // Check if kit is mostly loaded (smplr usually has a 'loaded' property or we check if sounds trigger)
+    if (drumKit) {
+      const drumMap = {
+        kick: "kick",
+        snare: "snare",
+        hihat: "hihat",
+        "hi-hat": "hihat",
+        tomHigh: "tom1",
+        tomMid: "tom2",
+        tomLow: "tom3",
+        crash: "hihat",
+        metronome: "snare",
+        metronome_high: "snare"
+      };
+      const note = drumMap[type] || type;
+      try {
+        drumKit.start({ note, time, velocity: sampleVelocity });
+        // Skip synth fallback for non-kick sounds only when samples are confirmed loaded
+        if (!isKick(type) && samplesReady) return;
+      } catch (e) {
+        console.warn("smplr start failed:", e);
+      }
     } else {
-      osc.type = "sine";
-      osc.frequency.setValueAtTime(sf, time);
-      osc.frequency.exponentialRampToValueAtTime(ef, time + 0.4);
-      gain.gain.setValueAtTime(vol * 0.9, time);
-      gain.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
+      console.log(`Drum kit not found for ${kitName}`);
     }
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(time);
-    osc.stop(time + 0.5);
-    return;
+  } else {
+    console.log("drumsRef.current is null");
   }
 
-  if (type === "kick") {
-    const sf = genre === "electronic" ? 150 : genre === "metal" ? 100 : 120;
-    osc.type = genre === "electronic" ? "sine" : "triangle";
-    osc.frequency.setValueAtTime(sf, time);
-    osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
-    gain.gain.setValueAtTime(vol, time);
-    gain.gain.exponentialRampToValueAtTime(
-      0.01,
-      time + (genre === "jazz" ? 0.3 : 0.5),
-    );
-    if (genre === "metal") {
-      const co = ctx.createOscillator(),
-        cg = ctx.createGain();
-      co.frequency.setValueAtTime(3000, time);
-      co.frequency.exponentialRampToValueAtTime(100, time + 0.05);
-      cg.gain.setValueAtTime(vol * 0.5, time);
-      cg.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
-      co.connect(cg);
-      cg.connect(ctx.destination);
-      co.start(time);
-      co.stop(time + 0.05);
+  // 2. STURDY FALLBACK (Improved Synth)
+  try {
+    const isKick = type === "kick";
+    const isSnare = type === "snare" || type.includes("metronome");
+    const isHats = type.includes("hihat") || type.includes("crash");
+
+    if (isKick) {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(150, time);
+      osc.frequency.exponentialRampToValueAtTime(40, time + 0.1);
+      g.gain.setValueAtTime(synthVelocity * 0.8, time); // Lowered so it doesn't overpower samples
+      g.gain.exponentialRampToValueAtTime(0.001, time + 0.3);
+      osc.connect(g);
+      g.connect(out);
+      osc.start(time);
+      osc.stop(time + 0.4);
+    } else if (isSnare) {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "triangle";
+      osc.frequency.setValueAtTime(220, time);
+      g.gain.setValueAtTime(synthVelocity * 0.5, time);
+      g.gain.exponentialRampToValueAtTime(0.001, time + 0.2);
+      osc.connect(g).connect(out);
+      osc.start(time);
+      osc.stop(time + 0.2);
+    } else {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.setValueAtTime(isHats ? 3000 : 400, time);
+      g.gain.setValueAtTime(synthVelocity * 0.2, time);
+      g.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+      osc.connect(g).connect(out);
+      osc.start(time);
+      osc.stop(time + 0.15);
     }
-  } else if (type === "snare") {
-    osc.type = "triangle";
-    osc.frequency.setValueAtTime(genre === "electronic" ? 200 : 180, time);
-    gain.gain.setValueAtTime(vol * 0.5, time);
-    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-    const noise = ctx.createBufferSource();
-    const buf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < ctx.sampleRate; i++) d[i] = Math.random() * 2 - 1;
-    noise.buffer = buf;
-    const ng = ctx.createGain(),
-      f = ctx.createBiquadFilter();
-    f.type = "highpass";
-    f.frequency.value = 1000;
-    ng.gain.setValueAtTime(vol * 0.8, time);
-    ng.gain.exponentialRampToValueAtTime(0.01, time + 0.2);
-    noise.connect(f);
-    f.connect(ng);
-    ng.connect(ctx.destination);
-    noise.start(time);
-  } else if (type === "hihat") {
-    const sz = ctx.sampleRate * 0.5;
-    const buf = ctx.createBuffer(1, sz, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < sz; i++) d[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buf;
-    const f = ctx.createBiquadFilter();
-    f.type = genre === "jazz" ? "bandpass" : "highpass";
-    f.frequency.value = genre === "jazz" ? 5000 : 7000;
-    if (genre === "jazz") f.Q.value = 1;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(vol * 0.3, time);
-    ng.gain.exponentialRampToValueAtTime(
-      0.01,
-      time + (genre === "jazz" ? 0.3 : 0.05),
-    );
-    noise.connect(f);
-    f.connect(ng);
-    ng.connect(ctx.destination);
-    noise.start(time);
-    return;
-  } else if (type === "crash") {
-    const sz = ctx.sampleRate * 2;
-    const buf = ctx.createBuffer(1, sz, ctx.sampleRate);
-    const d = buf.getChannelData(0);
-    for (let i = 0; i < sz; i++) d[i] = Math.random() * 2 - 1;
-    const noise = ctx.createBufferSource();
-    noise.buffer = buf;
-    const f = ctx.createBiquadFilter();
-    f.type = "highpass";
-    f.frequency.value = 3000;
-    const ng = ctx.createGain();
-    ng.gain.setValueAtTime(vol * 0.6, time);
-    ng.gain.exponentialRampToValueAtTime(0.01, time + 1.5);
-    noise.connect(f);
-    f.connect(ng);
-    ng.connect(ctx.destination);
-    noise.start(time);
-    return;
-  } else if (type === "metronome" || type === "metronome_high") {
-    osc.type = "sine";
-    const freq = type === "metronome_high" ? 1200 : 800;
-    osc.frequency.setValueAtTime(freq, time);
-    osc.frequency.exponentialRampToValueAtTime(10, time + 0.05);
-    gain.gain.setValueAtTime(vol * 0.4, time);
-    gain.gain.exponentialRampToValueAtTime(0.01, time + 0.05);
-  }
-  osc.connect(gain);
-  gain.connect(ctx.destination);
-  osc.start(time);
-  osc.stop(time + 0.5);
+  } catch (e) { }
 };
+
+const isKick = (type) => type === "kick";
 
 // ─────────────────────────────────────────────
 // PATTERN GENERATOR
@@ -363,6 +341,41 @@ const generatePattern = (
           p[i].hihat = i % 4 === 0 ? 0.7 : i % 2 === 0 ? 0.45 : 0;
       }
       if (intensity > 70) p[0].crash = 0.9;
+    } else if (genre === "breakbeat") {
+      // Breakbeat: Variant 0: Amen Break, 1: Funky Drummer, 2: Think
+      if (variant === 0) {
+        // Amen Break inspired
+        p[0].kick = vol; p[2].hihat = vol * 0.6; p[3].hihat = vol * 0.6;
+        p[4].snare = vol; p[5].hihat = vol * 0.6; p[6].hihat = vol * 0.6;
+        p[7].kick = vol * 0.7; p[8].kick = vol * 0.8; p[9].hihat = vol * 0.6;
+        p[10].snare = vol; p[11].hihat = vol * 0.6; p[12].kick = vol * 0.7;
+        p[13].hihat = vol * 0.6; p[14].hihat = vol * 0.6; p[15].hihat = vol * 0.6;
+      } else if (variant === 1) {
+        // Funky Drummer inspired
+        p[0].kick = vol; p[1].hihat = vol * 0.5; p[2].hihat = vol * 0.5;
+        p[3].hihat = vol * 0.5; p[4].snare = vol; p[5].hihat = vol * 0.5;
+        p[6].kick = vol * 0.7; p[7].hihat = vol * 0.5; p[8].kick = vol * 0.8;
+        p[9].hihat = vol * 0.5; p[10].snare = vol; p[11].hihat = vol * 0.5;
+        p[12].kick = vol * 0.6; p[13].hihat = vol * 0.5; p[14].hihat = vol * 0.5;
+        p[15].hihat = vol * 0.5;
+      } else {
+        // Think (About It) inspired
+        p[0].kick = vol; p[1].hihat = vol * 0.7; p[2].hihat = vol * 0.7;
+        p[3].hihat = vol * 0.7; p[4].snare = vol; p[5].hihat = vol * 0.7;
+        p[6].hihat = vol * 0.7; p[7].kick = vol * 0.6; p[8].kick = vol * 0.9;
+        p[9].hihat = vol * 0.7; p[10].snare = vol; p[11].hihat = vol * 0.7;
+        p[12].kick = vol * 0.5; p[13].hihat = vol * 0.7; p[14].hihat = vol * 0.7;
+        p[15].hihat = vol * 0.7;
+      }
+      for (let i = 0; i < 16; i++) {
+        if (p[i].hihat === 0 && r() < 0.2) p[i].hihat = vol * 0.3; // Add some random ghost hats
+        if (p[i].kick === 0 && p[i].snare === 0 && r() < 0.1) {
+          // Occasional ghost toms
+          const tomKey = r() < 0.3 ? 'tomHigh' : r() < 0.6 ? 'tomMid' : 'tomLow';
+          p[i][tomKey] = vol * 0.4;
+        }
+      }
+      if (intensity > 70) p[0].crash = 0.8;
     }
 
     return p;
@@ -388,6 +401,10 @@ const generatePattern = (
       if (i === 2 || i === 3) p[i].kick = 0.9;
     } else if (genre === "electronic") {
       if (i === 6) p[i].kick = 0.8;
+    } else if (genre === "breakbeat") {
+      if (i === 0 || i === 8) p[i].kick = 1;
+      if (i === 4 || i === 12) p[i].snare = 1;
+      if (i % 2 === 0) p[i].hihat = 0.7;
     }
   }
 
@@ -417,6 +434,12 @@ const generatePattern = (
           p[i].snare = 1;
           p[i].crash = 0.6;
         }
+      }
+    } else if (genre === "breakbeat") {
+      if (Math.random() * 100 > densityThreshold) {
+        if (rand < 0.4) p[i].snare = vol * (0.5 + rand * 0.5);
+        else if (rand < 0.7) p[i].kick = vol * (0.5 + rand * 0.5);
+        else p[i].hihat = vol * (0.5 + rand * 0.5);
       }
     } else {
       if (Math.random() * 100 > densityThreshold) {
@@ -825,6 +848,7 @@ const PianoRollBlock = ({
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
       onPointerLeave={handlePointerUp}
+      onClick={(e) => e.stopPropagation()}
     >
       {/* Chords Track */}
       <div className="flex items-center bg-neutral-800 border-b border-neutral-700 h-8 relative">
@@ -907,7 +931,7 @@ const PianoRollBlock = ({
                   data-chord-quick
                   onClick={(e) => e.stopPropagation()}
                   onPointerDown={(e) => e.stopPropagation()}
-                  className="absolute top-full left-0 mt-1 bg-[#161628] border border-indigo-600/40 rounded-lg shadow-2xl z-40 opacity-0 pointer-events-none group-hover/chord:opacity-100 group-hover/chord:pointer-events-auto group-focus-within/chord:opacity-100 group-focus-within/chord:pointer-events-auto transition-all duration-150 p-2 w-52"
+                  className={`absolute top-full left-0 mt-1 bg-[#161628] border border-indigo-600/40 rounded-lg shadow-2xl z-40 transition-all duration-150 p-2 w-52 ${isEditing ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"}`}
                 >
                   <div className="text-[8px] font-bold text-indigo-300 uppercase tracking-widest mb-1">
                     Quick Edit
@@ -1506,7 +1530,7 @@ const DrumFillGen = () => {
   const [recordMode, setRecordMode] = useState(
     savedState?.recordMode ?? "once",
   ); // 'once' | 'loop'
-  const [recordWriteMode, setRecordWriteMode] = useState("merge"); // 'merge' | 'overwrite' | 'newtake'
+  const [recordWriteMode, setRecordWriteMode] = useState("merge"); // 'merge' | 'newtake'
   const [isCountIn, setIsCountIn] = useState(false);
   const [countInBeats, setCountInBeats] = useState(0);
 
@@ -1581,6 +1605,9 @@ const DrumFillGen = () => {
   // ── Refs ──
   const audioCtxRef = useRef(null);
   const pianoRef = useRef(null);
+  const drumsRef = useRef(null);
+  const drumsLoadedRef = useRef(false);
+  const drumsLoadPromiseRef = useRef(null);
   const nextNoteTimeRef = useRef(0);
   const currentStepRef = useRef(0);
   const timerIDRef = useRef(null);
@@ -1594,6 +1621,59 @@ const DrumFillGen = () => {
   const isPaintingRef = useRef(false);
   // Keep refs in sync with state so callbacks can read current value without stale closure
   recordWriteModeRef.current = recordWriteMode;
+  const isRecordingRef = useRef(isRecording);
+  isRecordingRef.current = isRecording;
+  const recordModeRef = useRef(recordMode);
+  recordModeRef.current = recordMode;
+  const lastClearedLoopRef = useRef(0);
+
+  const ensureDrumsReady = useCallback(() => {
+    if (!audioCtxRef.current) {
+      console.log("Initializing AudioContext...");
+      audioCtxRef.current = createAudioContext();
+    }
+    if (audioCtxRef.current.state === "suspended") {
+      console.log("Resuming AudioContext...");
+      audioCtxRef.current.resume();
+    }
+    if (!drumsRef.current) {
+      console.log("Loading Drum Samples...");
+      const loadKit = (kit) => new Sampler(audioCtxRef.current, {
+        destination: audioCtxRef.current.masterCompressor || audioCtxRef.current.destination,
+        detune: 0,
+        volume: 100,
+        velocity: 100,
+        decayTime: 0.5,
+        lpfCutoffHz: 20000,
+        buffers: {
+          kick: `${CWILSO_BASE}${kit}/kick.wav`,
+          snare: `${CWILSO_BASE}${kit}/snare.wav`,
+          hihat: `${CWILSO_BASE}${kit}/hihat.wav`,
+          tom1: `${CWILSO_BASE}${kit}/tom1.wav`,
+          tom2: `${CWILSO_BASE}${kit}/tom2.wav`,
+          tom3: `${CWILSO_BASE}${kit}/tom3.wav`,
+        }
+      });
+
+      drumsRef.current = {
+        "acoustic-kit": loadKit("acoustic-kit"),
+        "R8": loadKit("R8"),
+        "LINN": loadKit("LINN"),
+        "breakbeat8": loadKit("breakbeat8"),
+      };
+      drumsLoadPromiseRef.current = Promise.all(
+        Object.values(drumsRef.current).map(s => s.load)
+      ).then(() => {
+        drumsLoadedRef.current = true;
+        console.log("All drum kits loaded!");
+      }).catch(err => console.warn("Drum kit loading error:", err));
+    } else {
+      Object.values(drumsRef.current).forEach(d => {
+        if (d.resume) d.resume();
+      });
+    }
+    if (pianoRef.current && pianoRef.current.resume) pianoRef.current.resume();
+  }, []);
 
   // Close segment kebab menu on outside click
   useEffect(() => {
@@ -1637,10 +1717,7 @@ const DrumFillGen = () => {
       setIsPlaying(false);
       setCurrentStep(-1);
       currentStepRef.current = 0;
-      // In overwrite mode, clear the manual grid before recording
-      if (recordWriteMode === "overwrite") {
-        setManualPattern(normalizeManual());
-      }
+      lastClearedLoopRef.current = 0;
       // In new take mode, erase everything — blank slate
       if (recordWriteMode === "newtake") {
         const blank = Array(16).fill(null).map(() => makeEmptyStep());
@@ -1650,11 +1727,9 @@ const DrumFillGen = () => {
       clearCountIn();
       setIsCountIn(true);
       setCountInBeats(4);
-      if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
-      if (audioCtxRef.current.state === "suspended")
-        audioCtxRef.current.resume();
+      ensureDrumsReady();
       // First upbeat click immediately (beat 4)
-      playSound(audioCtxRef.current, "metronome_high", audioCtxRef.current.currentTime, 1, genre);
+      playSound(audioCtxRef.current, "metronome_high", audioCtxRef.current.currentTime, 1, genre, drumsRef, drumsLoadedRef);
 
       const beatMs = (60 / bpm) * 1000;
       countInTimerRef.current = setInterval(() => {
@@ -1675,6 +1750,8 @@ const DrumFillGen = () => {
               ctx.currentTime,
               1,
               genre,
+              drumsRef,
+              drumsLoadedRef,
             );
           }
           return prev - 1;
@@ -1690,6 +1767,8 @@ const DrumFillGen = () => {
       recordWriteMode,
       stopRecording,
       genre,
+      drumsRef,
+      ensureDrumsReady,
     ],
   );
 
@@ -2067,19 +2146,19 @@ const DrumFillGen = () => {
       const s = activePattern[step];
       if (!s) return;
       const ctx = audioCtxRef.current;
-      if (s.kick > 0) playSound(ctx, "kick", time, s.kick, genre);
-      if (s.snare > 0) playSound(ctx, "snare", time, s.snare, genre);
-      if (s.hihat > 0) playSound(ctx, "hihat", time, s.hihat, genre);
-      if (s.tomHigh > 0) playSound(ctx, "tomHigh", time, s.tomHigh, genre);
-      if (s.tomMid > 0) playSound(ctx, "tomMid", time, s.tomMid, genre);
-      if (s.tomLow > 0) playSound(ctx, "tomLow", time, s.tomLow, genre);
-      if (s.crash > 0) playSound(ctx, "crash", time, s.crash, genre);
+      if (s.kick > 0) playSound(ctx, "kick", time, s.kick, genre, drumsRef, drumsLoadedRef);
+      if (s.snare > 0) playSound(ctx, "snare", time, s.snare, genre, drumsRef, drumsLoadedRef);
+      if (s.hihat > 0) playSound(ctx, "hihat", time, s.hihat, genre, drumsRef, drumsLoadedRef);
+      if (s.tomHigh > 0) playSound(ctx, "tomHigh", time, s.tomHigh, genre, drumsRef, drumsLoadedRef);
+      if (s.tomMid > 0) playSound(ctx, "tomMid", time, s.tomMid, genre, drumsRef, drumsLoadedRef);
+      if (s.tomLow > 0) playSound(ctx, "tomLow", time, s.tomLow, genre, drumsRef, drumsLoadedRef);
+      if (s.crash > 0) playSound(ctx, "crash", time, s.crash, genre, drumsRef, drumsLoadedRef);
 
       // Metronome logic
       const metShouldClick = isMetronomeEnabled || isRecording;
       if (metShouldClick && step % 4 === 0) {
         const isHigh = step % 16 === 0;
-        playSound(ctx, isHigh ? "metronome_high" : "metronome", time, 1, genre);
+        playSound(ctx, isHigh ? "metronome_high" : "metronome", time, 1, genre, drumsRef, drumsLoadedRef);
       }
 
       // Piano logic for Lyrics & Chords (Arrangement mode)
@@ -2191,7 +2270,7 @@ const DrumFillGen = () => {
         }
       }
     },
-    [activePattern, genre, isMetronomeEnabled, appMode, segments, bpm],
+    [activePattern, genre, isMetronomeEnabled, appMode, segments, bpm, drumsRef, generatorMode],
   );
 
   const startTimeRef = useRef(0);
@@ -2204,6 +2283,24 @@ const DrumFillGen = () => {
       const stepDuration = 60.0 / bpm / 4.0;
       const elapsedTime = audioCtxRef.current.currentTime - startTimeRef.current;
       const currentAbsoluteStep = Math.floor(elapsedTime / stepDuration);
+
+      // Early boundary detection to clear the board BEFORE next loop hits are played
+      if (isRecordingRef.current) {
+        // user records up to 0.5 steps early. time goes into the new boundary halfway before next loop's step 0.
+        const inputLoop = Math.floor((elapsedTime + 0.5 * stepDuration) / (maxSteps * stepDuration));
+        if (inputLoop > lastClearedLoopRef.current) {
+          lastClearedLoopRef.current = inputLoop;
+          if (recordModeRef.current === "once") {
+            stopRecording();
+          } else if (recordModeRef.current === "loop") {
+            if (recordWriteModeRef.current === "newtake") {
+              const blank = Array(16).fill(null).map(() => makeEmptyStep());
+              setManualPattern(blank);
+              setPattern(blank);
+            }
+          }
+        }
+      }
 
       if (currentAbsoluteStep > lastScheduledStepRef.current) {
         const stepToSchedule = currentAbsoluteStep % maxSteps;
@@ -2221,19 +2318,30 @@ const DrumFillGen = () => {
         if (!audioCtxRef.current) {
           audioCtxRef.current = createAudioContext();
         }
-        
+
         const setupAndStart = () => {
+          ensureDrumsReady();
           if (!pianoRef.current) {
-             pianoRef.current = new Soundfont(audioCtxRef.current, {
-               instrument: "acoustic_grand_piano",
-             });
+            pianoRef.current = new Soundfont(audioCtxRef.current, {
+              instrument: "acoustic_grand_piano",
+            });
           }
-          clearPlayheadTimers();
-          currentStepRef.current = 0;
-          lastScheduledStepRef.current = -1;
-          startTimeRef.current = audioCtxRef.current.currentTime + 0.1; // 100ms lead-in
-          isPlayingRef.current = true;
-          animationFrameId = requestAnimationFrame(tick);
+
+          const beginPlayback = () => {
+            clearPlayheadTimers();
+            currentStepRef.current = 0;
+            lastScheduledStepRef.current = -1;
+            startTimeRef.current = audioCtxRef.current.currentTime + 0.1; // 100ms lead-in
+            isPlayingRef.current = true;
+            animationFrameId = requestAnimationFrame(tick);
+          };
+
+          // Wait for samples to load before starting playback
+          if (drumsLoadPromiseRef.current && !drumsLoadedRef.current) {
+            drumsLoadPromiseRef.current.then(beginPlayback).catch(beginPlayback);
+          } else {
+            beginPlayback();
+          }
         }
 
         if (audioCtxRef.current.state === "suspended") {
@@ -2263,7 +2371,7 @@ const DrumFillGen = () => {
       }
       clearPlayheadTimers();
     };
-  }, [isPlaying, bpm, maxSteps, scheduleNote, clearPlayheadTimers]);
+  }, [isPlaying, bpm, maxSteps, scheduleNote, clearPlayheadTimers, stopRecording]);
 
   useEffect(() => {
     if (!isPlaying && isRecording) {
@@ -2281,12 +2389,32 @@ const DrumFillGen = () => {
     };
 
     const onKeyDown = (e) => {
+      // Don't trigger if user is typing in an input field
+      if (
+        e.target.tagName === "INPUT" ||
+        e.target.tagName === "TEXTAREA" ||
+        e.target.isContentEditable
+      ) {
+        return;
+      }
+
       const inst = keyMap[e.key.toLowerCase()];
       if (!inst) return;
+
+      // Stop propagation so we don't trigger other shortcuts
       e.preventDefault();
-      if (!audioCtxRef.current) audioCtxRef.current = createAudioContext();
-      if (audioCtxRef.current.state === "suspended")
+
+      ensureDrumsReady();
+
+      // Ensure context is resumed before playing
+      if (audioCtxRef.current && audioCtxRef.current.state === "suspended") {
         audioCtxRef.current.resume();
+      }
+
+
+      // Only trigger sounds if recording OR generator manual mode is active
+      const canPlayLive = isRecording || generatorMode === "manual";
+      if (!canPlayLive) return;
 
       // Always flash + play sound for preview
       if (!e.repeat) {
@@ -2297,6 +2425,8 @@ const DrumFillGen = () => {
           audioCtxRef.current.currentTime,
           1,
           genre,
+          drumsRef,
+          drumsLoadedRef
         );
       }
 
@@ -2311,6 +2441,12 @@ const DrumFillGen = () => {
           // Quantize based on absolute time from the start of playback.
           const elapsedTime = now - startTimeRef.current;
           const snappedStep = Math.round(elapsedTime / stepDuration);
+          const loopIndex = Math.floor(snappedStep / timelineLen);
+
+          // Disable recording for loop > 0 in "Once" mode so late hits aren't recorded to the next bar
+          if (recordModeRef.current === "once" && loopIndex > 0) {
+            return;
+          }
           currentStepIdx = (snappedStep % timelineLen + timelineLen) % timelineLen;
         }
 
@@ -2389,6 +2525,8 @@ const DrumFillGen = () => {
     applyManualHit,
     bpm,
     maxSteps,
+    drumsRef,
+    generatorMode,
   ]);
 
   useEffect(() => () => clearCountIn(), [clearCountIn]);
@@ -2886,21 +3024,21 @@ const DrumFillGen = () => {
             title="Save Project"
           >
             <Save size={14} /> SAVE
-        </button>
-        <button
-          onClick={exportMIDI}
-          draggable
-          onDragStart={(e) => {
-            e.dataTransfer.setData("text/uri-list", midiDragData);
-            e.dataTransfer.setData("application/x-midi", midiDragData);
-          }}
-          className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-200 flex items-center gap-2 cursor-pointer transition-colors"
-          title="Download or drag MIDI to your DAW/desktop"
-        >
-          <Download size={14} /> EXPORT MIDI
-        </button>
+          </button>
+          <button
+            onClick={exportMIDI}
+            draggable
+            onDragStart={(e) => {
+              e.dataTransfer.setData("text/uri-list", midiDragData);
+              e.dataTransfer.setData("application/x-midi", midiDragData);
+            }}
+            className="px-4 py-1.5 bg-neutral-800 hover:bg-neutral-700 border border-neutral-600 rounded-lg text-sm text-gray-200 flex items-center gap-2 cursor-pointer transition-colors"
+            title="Download or drag MIDI to your DAW/desktop"
+          >
+            <Download size={14} /> EXPORT MIDI
+          </button>
+        </div>
       </div>
-    </div>
 
       {/* WORKSPACE */}
       <div className="flex-1 overflow-hidden flex">
@@ -2956,19 +3094,12 @@ const DrumFillGen = () => {
                         Genre Style
                       </label>
                       <div className="grid grid-cols-2 gap-1.5">
-                        <GenreBtn
-                          id="acoustic"
-                          label="Rock / Pop"
-                          color="amber"
-                        />
-                        <GenreBtn
-                          id="electronic"
-                          label="Trap / EDM"
-                          color="indigo"
-                        />
-                        <GenreBtn id="jazz" label="Jazz / Fusion" color="sky" />
+                        <GenreBtn id="acoustic" label="Classic" color="amber" />
+                        <GenreBtn id="electronic" label="Roland R8" color="indigo" />
+                        <GenreBtn id="funk" label="LinnDrum" color="purple" />
+                        <GenreBtn id="breakbeat" label="Breakbeat" color="rose" />
+                        <GenreBtn id="jazz" label="Jazz" color="sky" />
                         <GenreBtn id="metal" label="Metal" color="red" />
-                        <GenreBtn id="funk" label="Funk / R&B" color="purple" />
                       </div>
                     </div>
                     <div>
@@ -3164,13 +3295,12 @@ const DrumFillGen = () => {
                           {[4, 3, 2, 1].map((n) => (
                             <span
                               key={n}
-                              className={`inline-block w-4 text-center rounded ${
-                                countInBeats === n
-                                  ? "bg-amber-400 text-black font-black scale-125"
-                                  : countInBeats < n
-                                    ? "text-amber-600/40"
-                                    : "text-amber-300"
-                              } transition-all`}
+                              className={`inline-block w-4 text-center rounded ${countInBeats === n
+                                ? "bg-amber-400 text-black font-black scale-125"
+                                : countInBeats < n
+                                  ? "text-amber-600/40"
+                                  : "text-amber-300"
+                                } transition-all`}
                             >
                               {n}
                             </span>
@@ -3197,11 +3327,10 @@ const DrumFillGen = () => {
                       ].map(({ key, inst, label, color }) => (
                         <span
                           key={key}
-                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-all duration-75 ${
-                            pressedKeys.has(inst)
-                              ? `${color} text-white font-bold scale-110 shadow-lg`
-                              : "bg-neutral-700 text-gray-400"
-                          }`}
+                          className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-all duration-75 ${pressedKeys.has(inst)
+                            ? `${color} text-white font-bold scale-110 shadow-lg`
+                            : "bg-neutral-700 text-gray-400"
+                            }`}
                         >
                           <kbd className="font-bold">{key}</kbd>=<span>{label}</span>
                         </span>
@@ -3343,6 +3472,7 @@ const DrumFillGen = () => {
                                             next[si] = { ...next[si], [inst.id]: newVal };
                                             return next;
                                           });
+                                          ensureDrumsReady();
                                           if (!audioCtxRef.current)
                                             audioCtxRef.current = createAudioContext();
                                           if (audioCtxRef.current.state === "suspended")
@@ -3353,6 +3483,8 @@ const DrumFillGen = () => {
                                             audioCtxRef.current.currentTime,
                                             1,
                                             genre,
+                                            drumsRef,
+                                            drumsLoadedRef
                                           );
                                         }
                                       }}
@@ -3362,7 +3494,7 @@ const DrumFillGen = () => {
                                           const currentVal = manualPattern[si][inst.id] || 0;
                                           if (currentVal > 0) return; // Don't overwrite existing notes while painting
                                           const newVal = 1;
-                                           setManualPattern((prev) => {
+                                          setManualPattern((prev) => {
                                             const next = [...prev];
                                             next[si] = {
                                               ...next[si],
@@ -3376,33 +3508,33 @@ const DrumFillGen = () => {
                                             next[si] = { ...next[si], [inst.id]: newVal };
                                             return next;
                                           });
-                                          playSound(audioCtxRef.current, inst.id, audioCtxRef.current.currentTime, 0.7, genre);
+                                          playSound(audioCtxRef.current, inst.id, audioCtxRef.current.currentTime, 0.7, genre, drumsRef, drumsLoadedRef);
 
                                         } else if (dragNoteRef.current.active) {
-                                           // Move mode: handle dragging existing note
-                                           const drag = dragNoteRef.current;
-                                           if (drag.instId === inst.id && drag.step === si) return;
-                                            drag.moved = true;
-                                            setManualPattern((prev) => {
-                                              const next = [...prev];
-                                              // clear origin
+                                          // Move mode: handle dragging existing note
+                                          const drag = dragNoteRef.current;
+                                          if (drag.instId === inst.id && drag.step === si) return;
+                                          drag.moved = true;
+                                          setManualPattern((prev) => {
+                                            const next = [...prev];
+                                            // clear origin
+                                            next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
+                                            // set new
+                                            next[si] = { ...next[si], [inst.id]: drag.value };
+                                            drag.instId = inst.id;
+                                            drag.step = si;
+                                            return next;
+                                          });
+                                          setPattern((prev) => {
+                                            const next = [...prev];
+                                            if (next[drag.step]) {
                                               next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
-                                              // set new
+                                            }
+                                            if (next[si]) {
                                               next[si] = { ...next[si], [inst.id]: drag.value };
-                                              drag.instId = inst.id;
-                                              drag.step = si;
-                                              return next;
-                                            });
-                                            setPattern((prev) => {
-                                              const next = [...prev];
-                                              if (next[drag.step]) {
-                                                next[drag.step] = { ...next[drag.step], [drag.instId]: 0 };
-                                              }
-                                              if (next[si]) {
-                                                next[si] = { ...next[si], [inst.id]: drag.value };
-                                              }
-                                              return next;
-                                            });
+                                            }
+                                            return next;
+                                          });
                                         }
                                       }}
                                       onMouseUp={() => {
@@ -3443,73 +3575,97 @@ const DrumFillGen = () => {
                 </div>
 
                 {/* ── TRANSPORT CONTROLS ── */}
-                <div className="flex items-center justify-center py-2">
-                  <div className="bg-neutral-900/70 border border-neutral-700/80 rounded-xl p-2 flex items-center gap-2 shadow-lg">
-                    
-                    {generatorMode === "manual" && (
-                      <>
-                        <button
-                          onClick={() => startRecording(recordMode)}
-                          disabled={isPlaying && !isRecording}
-                          className={`flex items-center gap-2 px-5 py-3 rounded-lg font-bold text-sm transition-all border ${
-                            isRecording || isCountIn
-                              ? "bg-red-600 text-white border-red-400 shadow-lg shadow-red-500/20"
-                              : "bg-neutral-800 text-red-300 border-red-500/30 hover:bg-neutral-700 disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed"
-                          }`}
-                          title="Count-in then capture keyboard hits to the manual grid"
-                        >
-                          {isRecording || isCountIn ? (
-                            <>
-                              <StopCircle size={16} />
-                              STOP
-                            </>
-                          ) : (
-                            <>
-                              <Activity size={16} />
-                              REC
-                            </>
-                          )}
-                        </button>
+                <div className="flex items-center justify-center py-2 gap-4">
+                  {generatorMode === "manual" && (
+                    <div className="bg-neutral-900/70 border border-neutral-700/80 rounded-xl p-2 flex items-center gap-2 shadow-lg">
 
-                        <div className="flex flex-col gap-1.5">
-                           <button
-                            onClick={() => setRecordMode((m) => (m === "once" ? "loop" : "once"))}
+                      <div className="flex flex-col gap-2">
+                        {/* Write Mode Toggle */}
+                        <div className="flex p-0.5 bg-neutral-800 rounded-lg border border-neutral-700/50">
+                          <button
+                            onClick={() => setRecordWriteMode("merge")}
                             disabled={isRecording || isCountIn}
-                            className={`w-full px-3 py-1 rounded border text-[10px] font-bold transition-all text-center ${
-                              recordMode === "loop"
-                                ? "bg-indigo-500/20 border-indigo-500/40 text-indigo-200"
-                                : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed"
-                            }`}
-                            title="Toggle between single-bar capture and continuous loop"
+                            className={`flex-1 px-3 py-1 rounded-md text-[10px] font-bold transition-all text-center ${recordWriteMode === "merge"
+                              ? "bg-amber-500/20 text-amber-200 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-300"
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title="MERGE: New hits layer on top"
                           >
-                            {recordMode === "loop" ? "LOOP REC" : "REC ONCE"}
+                            MERGE
                           </button>
                           <button
-                            onClick={() => setRecordWriteMode((m) => m === "merge" ? "overwrite" : m === "overwrite" ? "newtake" : "merge")}
+                            onClick={() => setRecordWriteMode("newtake")}
                             disabled={isRecording || isCountIn}
-                             className={`w-full px-3 py-1 rounded border text-[10px] font-bold transition-all text-center ${
-                              recordWriteMode === "overwrite"
-                                ? "bg-rose-500/20 border-rose-500/40 text-rose-200"
-                                : recordWriteMode === "newtake"
-                                ? "bg-sky-500/20 border-sky-500/40 text-sky-200"
-                                : "bg-amber-500/20 border-amber-500/40 text-amber-200"
-                            } disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed`}
-                            title={recordWriteMode === "merge" ? "MERGE: New hits layer on top" : recordWriteMode === "overwrite" ? "OVERWRITE: Clear manual hits before recording" : "NEW TAKE: Clear everything and regenerate"}
+                            className={`flex-1 px-3 py-1 rounded-md text-[10px] font-bold transition-all text-center ${recordWriteMode === "newtake"
+                              ? "bg-sky-500/20 text-sky-200 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-300"
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title="NEW TAKE: Clear everything and regenerate"
                           >
-                            {recordWriteMode === "merge" ? "MERGE" : recordWriteMode === "overwrite" ? "OVERWRITE" : "NEW TAKE"}
+                            NEW TAKE
                           </button>
                         </div>
-                      </>
-                    )}
 
+                        {/* Record Mode Toggle */}
+                        <div className="flex p-0.5 bg-neutral-800 rounded-lg border border-neutral-700/50">
+                          <button
+                            onClick={() => setRecordMode("once")}
+                            disabled={isRecording || isCountIn}
+                            className={`flex-1 px-3 py-1 rounded-md text-[10px] font-bold transition-all text-center ${recordMode === "once"
+                              ? "bg-neutral-600 text-white shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-300"
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title="Capture a single bar"
+                          >
+                            ONE
+                          </button>
+                          <button
+                            onClick={() => setRecordMode("loop")}
+                            disabled={isRecording || isCountIn}
+                            className={`flex-1 px-3 py-1 rounded-md text-[10px] font-bold transition-all text-center ${recordMode === "loop"
+                              ? "bg-indigo-500/20 text-indigo-200 shadow-sm"
+                              : "text-neutral-500 hover:text-neutral-300"
+                              } disabled:opacity-50 disabled:cursor-not-allowed`}
+                            title="Continuous loop recording"
+                          >
+                            LOOP
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Record Button */}
+                      <button
+                        onClick={() => startRecording(recordMode)}
+                        disabled={isPlaying && !isRecording}
+                        className={`flex flex-col items-center justify-center gap-1 w-20 h-[68px] rounded-lg font-bold text-sm transition-all border ${isRecording || isCountIn
+                          ? "bg-red-600 text-white border-red-400 shadow-lg shadow-red-500/20"
+                          : "bg-neutral-800 text-red-300 border-red-500/30 hover:bg-neutral-700 disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed"
+                          }`}
+                        title="Count-in then capture keyboard hits to the manual grid"
+                      >
+                        {isRecording || isCountIn ? (
+                          <>
+                            <StopCircle size={20} />
+                            STOP
+                          </>
+                        ) : (
+                          <>
+                            <Activity size={20} />
+                            REC
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  )}
+
+                  <div className="bg-neutral-900/70 border border-neutral-700/80 rounded-xl p-2 flex items-center gap-2 shadow-lg">
                     <button
                       onClick={handlePlayToggle}
                       disabled={isRecording || isCountIn}
-                      className={`flex items-center gap-3 px-10 py-3 rounded-lg font-bold text-lg shadow-2xl transition-all active:scale-95 ${
-                        isPlaying && !isRecording && !isCountIn
-                          ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/30"
-                          : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30"
-                      } disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed`}
+                      className={`flex items-center gap-3 px-10 py-3 rounded-lg font-bold text-lg shadow-2xl transition-all active:scale-95 ${isPlaying && !isRecording && !isCountIn
+                        ? "bg-red-500 hover:bg-red-600 text-white shadow-red-500/30"
+                        : "bg-emerald-500 hover:bg-emerald-400 text-white shadow-emerald-500/30"
+                        } disabled:bg-neutral-800/50 disabled:text-neutral-500 disabled:cursor-not-allowed`}
                     >
                       {isPlaying && !isRecording && !isCountIn ? (
                         <>
@@ -3521,15 +3677,14 @@ const DrumFillGen = () => {
                         </>
                       )}
                     </button>
-                    
+
                     <button
                       onClick={() => setIsGrooveLooping((v) => !v)}
-                      className={`h-full px-4 rounded-lg border text-sm font-bold transition-all flex items-center gap-2 ${
-                        isGrooveLooping
-                          ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
-                          : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white"
-                      }`}
-                      title={ isGrooveLooping ? "Loop groove is ON" : "Loop groove is OFF (play once)"}
+                      className={`h-full px-4 rounded-lg border text-sm font-bold transition-all flex items-center gap-2 ${isGrooveLooping
+                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-400"
+                        : "bg-neutral-800 border-neutral-700 text-neutral-400 hover:text-white"
+                        }`}
+                      title={isGrooveLooping ? "Loop groove is ON" : "Loop groove is OFF (play once)"}
                     >
                       <Repeat size={14} />
                     </button>
@@ -3667,7 +3822,6 @@ const DrumFillGen = () => {
                               onDrop={(e) =>
                                 handleDropInSegment(e, segIndex, barIndex)
                               }
-                              onClick={() => item && seekToBar(globalBarIdx)}
                               className={`relative h-14 rounded-md border-2 border-dashed flex items-center justify-center overflow-hidden transition-all group
                                                                 ${item ? "border-transparent bg-neutral-800 hover:bg-neutral-700/60 cursor-pointer" : "border-neutral-700/50 hover:border-neutral-600 hover:bg-neutral-800/20"}
                                                                 ${isCurrent ? "ring-1 ring-emerald-500/50" : ""} cursor-grab active:cursor-grabbing`}
@@ -3912,15 +4066,6 @@ const DrumFillGen = () => {
                           return (
                             <div
                               key={barIndex}
-                              onClick={(e) => {
-                                if (
-                                  e.target.tagName !== "INPUT" &&
-                                  e.target.tagName !== "SPAN" &&
-                                  e.target.tagName !== "BUTTON"
-                                ) {
-                                  seekToBar(globalBarIdx);
-                                }
-                              }}
                               className={`p-3 relative border-b border-neutral-700/50 last:border-b-0 transition-colors cursor-pointer hover:bg-neutral-800/40 ${isBarCurrent ? (item ? "bg-emerald-900/10" : "bg-neutral-800/60") : ""}`}
                             >
                               {/* ── Bar header: groove name + play controls + mode toggle ── */}
